@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="貓日誌">
+<meta name="theme-color" content="#FAF6EF">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>貓咪健康日誌</title>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --cr:#FAF6EF;--cr2:#F3EDE2;--cr3:#E8DFD0;
+  --rose:#E8829A;--rose-l:#F5C6D2;--rose-p:#FBF0F3;
+  --lav:#C4B4E4;
+  --amb:#D4956A;--amb-l:#F5DFD0;
+  --grn:#7BAF82;--grn-l:#D8EDDB;
+  --blu:#7BB8E8;--blu-l:#DFF0FC;
+  --tel:#5BBCB0;--tel-l:#D6F0EE;
+  --red:#E05555;--red-l:#FDEAEA;
+  --t1:#3D3330;--t2:#7A6E69;--t3:#A89E99;
+  --bd:rgba(160,140,120,0.2);
+  --r:15px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--cr);font-family:-apple-system,'PingFang TC',sans-serif;color:var(--t1)}
+body{display:flex;flex-direction:column;max-width:430px;margin:0 auto;overflow:hidden;height:100dvh}
+
+.topbar{flex-shrink:0;padding:48px 18px 10px;display:flex;align-items:center;justify-content:space-between;background:var(--cr)}
+.tb-title{font-size:17px;font-weight:700}
+.ico-btn{width:36px;height:36px;border-radius:50%;background:var(--cr2);border:none;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center}
+
+.cat-bar{flex-shrink:0;display:flex;gap:7px;padding:0 18px 12px;overflow-x:auto;scrollbar-width:none}
+.cat-bar::-webkit-scrollbar{display:none}
+.chip{padding:6px 16px;border-radius:20px;font-size:13px;font-weight:500;border:none;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--rose);color:#fff}
+.chip.off{background:var(--cr2);color:var(--t2)}
+
+.scroll{flex:1;overflow-y:auto;padding:0 18px 8px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+
+.bot-nav{flex-shrink:0;display:flex;background:var(--cr);border-top:1px solid var(--bd);padding:6px 0 calc(8px + env(safe-area-inset-bottom))}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;border:none;background:transparent;cursor:pointer;padding:5px 0}
+.nav-ico{font-size:20px}
+.nav-lbl{font-size:10px;font-weight:500;color:var(--t3)}
+.nav-btn.on .nav-lbl{color:var(--rose)}
+
+.card{background:var(--cr);border:1px solid var(--bd);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.card2{background:var(--cr2);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.sec{font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;margin:16px 0 8px}
+.sec-note{font-size:10px;color:var(--t3);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px}
+.big{font-size:28px;font-weight:700}
+.sub{font-size:12px;color:var(--t3)}
+
+.inp{width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid var(--cr3);background:var(--cr);font-size:14px;color:var(--t1);font-family:inherit}
+.inp:focus{outline:none;border-color:var(--rose-l)}
+.inp-sm{padding:8px 10px;border-radius:10px;border:1.5px solid var(--cr3);background:var(--cr);font-size:13px;color:var(--t1);font-family:inherit;text-align:center}
+.inp-sm:focus{outline:none;border-color:var(--rose-l)}
+.sel{padding:8px 10px;border-radius:10px;border:1.5px solid var(--cr3);background:var(--cr);font-size:13px;color:var(--t1);font-family:inherit;flex:1}
+.sel:focus{outline:none;border-color:var(--rose-l)}
+.textarea{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid var(--cr3);background:var(--cr);font-size:13px;color:var(--t1);font-family:inherit;resize:none;min-height:60px;line-height:1.5}
+.textarea:focus{outline:none;border-color:var(--rose-l)}
+
+.btn{padding:9px 16px;border-radius:10px;border:none;background:var(--rose);color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:active{transform:scale(.94)}
+.btn-g{background:var(--cr2);color:var(--t2)}
+.btn-del{width:27px;height:27px;border-radius:8px;border:none;background:var(--red-l);color:var(--red);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.row:last-child{margin-bottom:0}
+.lbl{font-size:13px;color:var(--t2);white-space:nowrap}
+.tag{display:inline-block;padding:3px 9px;border-radius:8px;font-size:11px;font-weight:600}
+.tag-g{background:var(--grn-l);color:#27500A}
+.tag-a{background:var(--amb-l);color:#633806}
+.tag-r{background:var(--red-l);color:var(--red)}
+.tag-x{background:var(--cr2);color:var(--t3)}
+
+/* CALENDAR */
+.mnav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.mnav-btn{width:32px;height:32px;border-radius:50%;background:var(--cr2);border:none;cursor:pointer;font-size:18px;color:var(--t2)}
+.cal-wrap{background:var(--cr2);border-radius:var(--r);padding:12px;margin-bottom:10px}
+.cal-hdr{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px}
+.cal-dl{text-align:center;font-size:10px;font-weight:600;color:var(--t3);padding:3px 0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cell{aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:background .12s}
+.cell:active{transform:scale(.88)}
+.cnum{font-size:13px;font-weight:500;color:var(--t1);line-height:1}
+.cell.other .cnum{opacity:.3}
+.cell.sel{background:var(--rose)}
+.cell.sel .cnum{color:#fff}
+.cell.tod .cnum{color:var(--rose);font-weight:700}
+.cdots{display:flex;gap:2px;margin-top:3px;justify-content:center;flex-wrap:wrap;max-width:24px}
+.cdot{width:4px;height:4px;border-radius:50%}
+.cell.sel .cdot{opacity:.6}
+
+/* COUNT */
+.cnt-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.cnt-card{background:var(--cr);border:1px solid var(--bd);border-radius:var(--r);padding:12px}
+.cnt-lbl{font-size:11px;color:var(--t2);margin-bottom:7px;display:flex;align-items:center;gap:4px}
+.cnt-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.cnt-row{display:flex;align-items:center;gap:8px}
+.cnt-val{font-size:28px;font-weight:700;flex:1}
+.cnt-btns{display:flex;flex-direction:column;gap:5px}
+.cnt-btn{width:28px;height:28px;border-radius:7px;background:var(--cr2);border:none;cursor:pointer;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.cnt-btn:active{transform:scale(.85)}
+
+/* CARE */
+.care-list{background:var(--cr);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+.care-row{display:flex;align-items:center;padding:11px 13px;border-bottom:1px solid var(--bd);gap:9px;cursor:pointer}
+.care-row:last-child{border-bottom:none}
+.care-ico{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+
+/* PROGRESS */
+.prog-bar{height:9px;border-radius:6px;background:var(--cr3);overflow:hidden;margin:7px 0 4px}
+.prog-fill{height:100%;border-radius:6px;background:var(--rose);transition:width .4s}
+.prog-fill.over{background:var(--red)}
+
+/* WATER */
+.water-log-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)}
+.water-log-row:last-child{border-bottom:none}
+
+/* MEAL */
+.meal-row{display:flex;align-items:center;gap:7px;padding:9px 0;border-bottom:1px solid var(--bd)}
+.meal-row:last-child{border-bottom:none}
+
+/* MISC */
+.food-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--bd)}
+.food-row:last-child{border-bottom:none}
+.wh-row{display:flex;justify-content:space-between;font-size:12px;color:var(--t2);padding:3px 0;border-bottom:1px solid var(--bd)}
+.wh-row:last-child{border-bottom:none}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.s-card{background:var(--cr2);border-radius:var(--r);padding:12px}
+.empty{text-align:center;padding:18px 0;font-size:13px;color:var(--t3)}
+
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(50,30,20,.32);align-items:flex-end;justify-content:center;z-index:999}
+.modal-bg.open{display:flex}
+.modal{background:var(--cr);border-radius:22px 22px 0 0;padding:18px 20px calc(22px + env(safe-area-inset-bottom));width:100%;max-width:430px}
+.modal-handle{width:34px;height:4px;border-radius:2px;background:var(--cr3);margin:0 auto 16px}
+.modal h3{font-size:15px;font-weight:700;margin-bottom:13px}
+
+input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="tb-title" id="tb-title">🐾 橘子</div>
+    <div id="sync-status" style="font-size:11px;color:var(--t3);margin-top:2px"></div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="ico-btn" id="btn-rename">✏️</button>
+    <button class="ico-btn" id="btn-add-cat">➕</button>
+  </div>
+</div>
+<div class="cat-bar" id="cat-bar"></div>
+
+<div class="scroll" id="scroll">
+  <div id="pg-cal"></div>
+  <div id="pg-calorie" style="display:none"></div>
+  <div id="pg-foods" style="display:none"></div>
+  <div id="pg-settings" style="display:none"></div>
+</div>
+
+<nav class="bot-nav">
+  <button class="nav-btn on" id="nav-cal"><span class="nav-ico">📅</span><span class="nav-lbl">日曆</span></button>
+  <button class="nav-btn" id="nav-calorie"><span class="nav-ico">🍽️</span><span class="nav-lbl">熱量</span></button>
+  <button class="nav-btn" id="nav-foods"><span class="nav-ico">🥫</span><span class="nav-lbl">食物庫</span></button>
+  <button class="nav-btn" id="nav-settings"><span class="nav-ico">⚙️</span><span class="nav-lbl">設定</span></button>
+</nav>
+
+<!-- CAT MODAL -->
+<div class="modal-bg" id="modal-cat">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="mcat-title">新增貓咪</h3>
+    <input class="inp" id="mcat-inp" placeholder="貓咪名字" maxlength="10" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-g" style="flex:1" id="mcat-cancel">取消</button>
+      <button class="btn" style="flex:1" id="mcat-ok">確定</button>
+    </div>
+  </div>
+</div>
+
+<!-- FIREBASE CONFIG MODAL -->
+<div class="modal-bg" id="modal-fb">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>🔗 雲端同步設定</h3>
+    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;line-height:1.6">輸入 Firebase 設定後，所有裝置會即時共用同一份資料。<br><a href="https://console.firebase.google.com" target="_blank" style="color:var(--rose)">→ Firebase Console</a> 取得設定值</p>
+    <input class="inp" id="fb-apikey" placeholder="apiKey" style="margin-bottom:8px">
+    <input class="inp" id="fb-projectid" placeholder="projectId" style="margin-bottom:8px">
+    <input class="inp" id="fb-appid" placeholder="appId" style="margin-bottom:14px">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-g" style="flex:1" id="fb-cancel">取消</button>
+      <button class="btn" style="flex:1" id="fb-save">連線</button>
+    </div>
+    <button id="fb-disconnect" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷雲端連線（改用本機儲存）</button>
+  </div>
+</div>
+
+<!-- CARE MODAL -->
+<div class="modal-bg" id="modal-care">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="mcare-title">記錄日期</h3>
+    <input type="date" class="inp" id="mcare-date" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-g" style="flex:1" id="mcare-cancel">取消</button>
+      <button class="btn" style="flex:1" id="mcare-ok">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var SK = 'catAll_v4';
+var D, curCat, curPage, viewY, viewM, selDate, curCareKey, catModalMode;
+var todayD = new Date();
+var todayStr = fmtDate(todayD);
+
+function fmtDate(d) {
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+function nowTime() { return pad(todayD.getHours()) + ':' + pad(todayD.getMinutes()); }
+
+function defaultData() {
+  return {
+    cats: [{name:'橘子',weight:4,status:'1.2'},{name:'豆豆',weight:3.5,status:'1.2'}],
+    records: {},
+    shared: {},
+    meals: {},
+    foods: [
+      {id:1,name:'O30 主食罐',grams:85,kcal:2.95},
+      {id:2,name:'UC33',grams:80,kcal:3.04},
+      {id:3,name:'餐包(綠)',grams:60,kcal:48.6},
+      {id:4,name:'乾飼料',grams:30,kcal:110}
+    ],
+    meds: {},
+    nextId: 10
+  };
+}
+
+// ===== FIREBASE SYNC =====
+var db = null;
+var FB_SK = 'catFBConfig';
+var DOC_ID = 'sharedData';
+var COLL = 'catHealth';
+var syncPending = false;
+
+function getFBConfig() {
+  try { var r = localStorage.getItem(FB_SK); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+}
+function saveFBConfig(cfg) {
+  try { localStorage.setItem(FB_SK, JSON.stringify(cfg)); } catch(e) {}
+}
+
+function initFirebase(cfg) {
+  try {
+    if (firebase.apps.length) firebase.apps.forEach(function(a){ try{a.delete();}catch(e){} });
+    var app = firebase.initializeApp({
+      apiKey: cfg.apiKey,
+      projectId: cfg.projectId,
+      appId: cfg.appId
+    });
+    db = firebase.firestore(app);
+    return true;
+  } catch(e) { console.error('Firebase init error:', e); return false; }
+}
+
+function setSyncStatus(msg, color) {
+  var el = document.getElementById('sync-status');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--t3)'; }
+}
+
+function syncToCloud() {
+  if (!db) return;
+  setSyncStatus('☁️ 同步中...', 'var(--t3)');
+  var payload = JSON.parse(JSON.stringify(D));
+  payload._updated = Date.now();
+  db.collection(COLL).doc(DOC_ID).set(payload)
+    .then(function() { setSyncStatus('☁️ 已同步', 'var(--grn)'); })
+    .catch(function(e) { setSyncStatus('⚠️ 同步失敗', 'var(--red)'); console.error(e); });
+}
+
+function loadFromCloud(callback) {
+  if (!db) { callback(false); return; }
+  setSyncStatus('☁️ 載入雲端資料...', 'var(--t3)');
+  db.collection(COLL).doc(DOC_ID).get()
+    .then(function(doc) {
+      if (doc.exists) {
+        var data = doc.data();
+        delete data._updated;
+        D = data;
+        try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
+        setSyncStatus('☁️ 雲端同步中', 'var(--grn)');
+        callback(true);
+      } else {
+        setSyncStatus('☁️ 雲端同步中', 'var(--grn)');
+        callback(false);
+      }
+    })
+    .catch(function(e) {
+      setSyncStatus('⚠️ 雲端連線失敗，使用本機資料', 'var(--amb)');
+      console.error(e); callback(false);
+    });
+}
+
+function startRealtimeSync() {
+  if (!db) return;
+  db.collection(COLL).doc(DOC_ID).onSnapshot(function(doc) {
+    if (doc.exists && doc.metadata.hasPendingWrites === false) {
+      var data = doc.data();
+      if (!data._updated) return;
+      var localTs = D._updated || 0;
+      if (data._updated > localTs) {
+        delete data._updated;
+        D = data;
+        try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
+        setSyncStatus('☁️ 已更新', 'var(--grn)');
+        if (curPage === 'cal') { buildCal(); buildDayPanel(); }
+        else if (curPage === 'calorie') buildCaloriePage();
+        else if (curPage === 'settings') buildSettingsPage();
+        renderCatBar();
+      }
+    }
+  }, function(e) { console.error('Snapshot error:', e); });
+}
+
+function openFBModal() {
+  var cfg = getFBConfig();
+  document.getElementById('fb-apikey').value = cfg ? cfg.apiKey : '';
+  document.getElementById('fb-projectid').value = cfg ? cfg.projectId : '';
+  document.getElementById('fb-appid').value = cfg ? cfg.appId : '';
+  document.getElementById('fb-disconnect').style.display = cfg ? '' : 'none';
+  openModal('modal-fb');
+}
+
+// ===== LOCAL STORAGE =====
+function loadD() {
+  try { var r = localStorage.getItem(SK); if (r) return JSON.parse(r); } catch(e) {}
+  return defaultData();
+}
+function saveD() {
+  try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
+  if (db) {
+    clearTimeout(syncPending);
+    syncPending = setTimeout(syncToCloud, 1200);
+  }
+}
+
+function catObj() { return D.cats[curCat]; }
+function catN() { return catObj() ? catObj().name : ''; }
+
+function getRec(date) {
+  var k = catN() + '|' + date;
+  if (!D.records[k]) D.records[k] = {weight:'', notes:'', meds:{}, care:{}};
+  return D.records[k];
+}
+function getShared(date) {
+  if (!D.shared[date]) D.shared[date] = {pee:0, poop:0, waterLogs:[]};
+  return D.shared[date];
+}
+function getMeals(date) {
+  var k = catN() + '|' + date;
+  if (!D.meals[k]) D.meals[k] = [];
+  return D.meals[k];
+}
+function getCatMeds() {
+  if (!D.meds[catN()]) D.meds[catN()] = [];
+  return D.meds[catN()];
+}
+
+function calcRer(w) { return 30 * parseFloat(w) + 70; }
+function calcDaily(c) {
+  return Math.round(calcRer(c.weight) * (parseFloat(c.status) || 1.2) * 10) / 10;
+}
+function calcAte(date) {
+  var meals = getMeals(date);
+  var total = 0;
+  for (var i = 0; i < meals.length; i++) {
+    var f = foodById(meals[i].foodId);
+    if (f) total += f.kcal * meals[i].portions;
+  }
+  return Math.round(total * 10) / 10;
+}
+function foodById(id) {
+  for (var i = 0; i < D.foods.length; i++) if (D.foods[i].id === id) return D.foods[i];
+  return null;
+}
+
+function getDots(date) {
+  var s = D.shared[date];
+  var k = catN() + '|' + date;
+  var r = D.records[k];
+  var d = [];
+  if (s && s.pee > 0) d.push('pee');
+  if (s && s.poop > 0) d.push('poop');
+  if (s && s.waterLogs && s.waterLogs.length > 0) d.push('water');
+  if (r && r.weight) d.push('weight');
+  if (D.meals[k] && D.meals[k].length > 0) d.push('meal');
+  return d;
+}
+
+var DOT_COLOR = {pee:'var(--blu)', poop:'var(--amb)', water:'var(--tel)', weight:'var(--grn)', meal:'var(--rose)'};
+
+function lastCareDate(key) {
+  var best = null;
+  var entries = Object.keys(D.records);
+  for (var i = 0; i < entries.length; i++) {
+    var k = entries[i];
+    if (k.indexOf(catN() + '|') === 0 && D.records[k].care && D.records[k].care[key]) {
+      var dt = k.split('|')[1];
+      if (!best || dt > best) best = dt;
+    }
+  }
+  return best;
+}
+
+// ===== INIT =====
+function init() {
+  D = loadD();
+  curCat = 0; curPage = 'cal';
+  viewY = todayD.getFullYear(); viewM = todayD.getMonth();
+  selDate = todayStr;
+  bindEvents();
+
+  var cfg = getFBConfig();
+  if (cfg && cfg.apiKey && cfg.projectId && cfg.appId) {
+    if (initFirebase(cfg)) {
+      loadFromCloud(function(loaded) {
+        if (loaded) { renderCatBar(); showPage('cal'); }
+        else { renderCatBar(); showPage('cal'); }
+        startRealtimeSync();
+      });
+    } else {
+      setSyncStatus('⚠️ Firebase 設定有誤', 'var(--red)');
+      renderCatBar(); showPage('cal');
+    }
+  } else {
+    setSyncStatus('未連線雲端', 'var(--t3)');
+    renderCatBar(); showPage('cal');
+  }
+}
+
+// ===== EVENTS =====
+function bindEvents() {
+  document.getElementById('btn-rename').onclick = function() { openCatModal('rename'); };
+  document.getElementById('btn-add-cat').onclick = function() { openCatModal('add'); };
+  document.getElementById('mcat-ok').onclick = confirmCat;
+  document.getElementById('mcat-cancel').onclick = function() { closeModal('modal-cat'); };
+  document.getElementById('mcare-ok').onclick = confirmCare;
+  document.getElementById('mcare-cancel').onclick = function() { closeModal('modal-care'); };
+  document.getElementById('mcat-inp').addEventListener('keydown', function(e) { if (e.key==='Enter') confirmCat(); });
+  document.getElementById('modal-cat').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-cat'); });
+  document.getElementById('modal-care').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-care'); });
+  document.getElementById('modal-fb').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-fb'); });
+  document.getElementById('fb-cancel').onclick = function() { closeModal('modal-fb'); };
+  document.getElementById('fb-save').onclick = function() {
+    var cfg = {
+      apiKey: document.getElementById('fb-apikey').value.trim(),
+      projectId: document.getElementById('fb-projectid').value.trim(),
+      appId: document.getElementById('fb-appid').value.trim()
+    };
+    if (!cfg.apiKey || !cfg.projectId || !cfg.appId) { alert('請填寫所有欄位'); return; }
+    saveFBConfig(cfg);
+    if (initFirebase(cfg)) {
+      closeModal('modal-fb');
+      loadFromCloud(function(loaded) {
+        if (loaded) { renderCatBar(); showPage(curPage); }
+        startRealtimeSync();
+        syncToCloud();
+      });
+    } else {
+      alert('Firebase 設定有誤，請確認');
+    }
+  };
+  document.getElementById('fb-disconnect').onclick = function() {
+    if (!confirm('確定中斷雲端連線？資料仍保留在本機。')) return;
+    localStorage.removeItem(FB_SK);
+    db = null;
+    setSyncStatus('未連線雲端', 'var(--t3)');
+    closeModal('modal-fb');
+  };
+  document.getElementById('nav-cal').onclick = function() { showPage('cal'); };
+  document.getElementById('nav-calorie').onclick = function() { showPage('calorie'); };
+  document.getElementById('nav-foods').onclick = function() { showPage('foods'); };
+  document.getElementById('nav-settings').onclick = function() { showPage('settings'); };
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ===== CAT BAR =====
+function renderCatBar() {
+  var html = '';
+  for (var i = 0; i < D.cats.length; i++) {
+    html += '<button class="chip ' + (i===curCat?'on':'off') + '" data-i="' + i + '">' + D.cats[i].name + '</button>';
+  }
+  var bar = document.getElementById('cat-bar');
+  bar.innerHTML = html;
+  var chips = bar.querySelectorAll('.chip');
+  for (var j = 0; j < chips.length; j++) {
+    chips[j].addEventListener('click', (function(idx) {
+      return function() { selectCat(idx); };
+    })(parseInt(chips[j].getAttribute('data-i'))));
+  }
+  document.getElementById('tb-title').textContent = '🐾 ' + catN();
+}
+
+function selectCat(i) { curCat = i; renderCatBar(); showPage(curPage); }
+
+function openCatModal(mode) {
+  catModalMode = mode;
+  document.getElementById('mcat-title').textContent = mode==='add' ? '新增貓咪' : '重新命名';
+  document.getElementById('mcat-inp').value = mode==='rename' ? catN() : '';
+  openModal('modal-cat');
+  setTimeout(function() { document.getElementById('mcat-inp').focus(); }, 80);
+}
+function confirmCat() {
+  var v = document.getElementById('mcat-inp').value.trim();
+  if (!v) return;
+  if (catModalMode === 'add') { D.cats.push({name:v,weight:4,status:'1.2'}); curCat = D.cats.length - 1; }
+  else catObj().name = v;
+  saveD(); closeModal('modal-cat'); renderCatBar(); showPage(curPage);
+}
+
+// ===== PAGE SWITCH =====
+function showPage(page) {
+  curPage = page;
+  var pages = ['cal','calorie','foods','settings'];
+  for (var i = 0; i < pages.length; i++) {
+    document.getElementById('pg-' + pages[i]).style.display = pages[i]===page ? '' : 'none';
+    document.getElementById('nav-' + pages[i]).classList.toggle('on', pages[i]===page);
+  }
+  document.getElementById('scroll').scrollTop = 0;
+  if (page==='cal') { buildCal(); buildDayPanel(); }
+  else if (page==='calorie') buildCaloriePage();
+  else if (page==='foods') buildFoodsPage();
+  else if (page==='settings') buildSettingsPage();
+}
+
+// ===== CALENDAR =====
+var MN = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+function changeMonth(d) {
+  viewM += d;
+  if (viewM > 11) { viewM = 0; viewY++; }
+  if (viewM < 0) { viewM = 11; viewY--; }
+  buildCal();
+}
+
+function buildCal() {
+  var first = new Date(viewY, viewM, 1).getDay();
+  var dim = new Date(viewY, viewM+1, 0).getDate();
+  var prev = new Date(viewY, viewM, 0).getDate();
+  var cells = '';
+
+  function mkCell(d, ds, other) {
+    var isTod = ds===todayStr, isSel = ds===selDate;
+    var cls = 'cell' + (other?' other':'') + (isSel?' sel':isTod?' tod':'');
+    var dots = getDots(ds);
+    var dotsHtml = '';
+    for (var di = 0; di < Math.min(dots.length, 5); di++) {
+      dotsHtml += '<span class="cdot" style="background:' + DOT_COLOR[dots[di]] + '"></span>';
+    }
+    return '<div class="' + cls + '" data-ds="' + ds + '"><span class="cnum">' + d + '</span><div class="cdots">' + dotsHtml + '</div></div>';
+  }
+
+  for (var i = 0; i < first; i++) {
+    var d = prev - first + 1 + i;
+    cells += mkCell(d, fmtDate(new Date(viewY, viewM-1, d)), true);
+  }
+  for (var d2 = 1; d2 <= dim; d2++) {
+    cells += mkCell(d2, fmtDate(new Date(viewY, viewM, d2)), false);
+  }
+  var rem = (first+dim)%7===0 ? 0 : 7-(first+dim)%7;
+  for (var i2 = 1; i2 <= rem; i2++) {
+    cells += mkCell(i2, fmtDate(new Date(viewY, viewM+1, i2)), true);
+  }
+
+  var dayLabels = ['日','一','二','三','四','五','六'];
+  var labelColors = ['color:var(--rose)','','','','','','color:var(--lav)'];
+  var hdr = '';
+  for (var li = 0; li < 7; li++) {
+    hdr += '<div class="cal-dl" style="' + labelColors[li] + '">' + dayLabels[li] + '</div>';
+  }
+
+  var legend = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">';
+  var legendItems = [['var(--blu)','小便'],['var(--amb)','大便'],['var(--tel)','飲水'],['var(--grn)','體重'],['var(--rose)','用餐']];
+  for (var li2 = 0; li2 < legendItems.length; li2++) {
+    legend += '<div style="display:flex;align-items:center;gap:4px"><span class="cdot" style="width:7px;height:7px;background:' + legendItems[li2][0] + '"></span><span class="sub">' + legendItems[li2][1] + '</span></div>';
+  }
+  legend += '</div>';
+
+  var html = '<div class="mnav">';
+  html += '<button class="mnav-btn" id="btn-prev-month">‹</button>';
+  html += '<span style="font-size:15px;font-weight:600">' + viewY + ' 年 ' + MN[viewM] + '</span>';
+  html += '<button class="mnav-btn" id="btn-next-month">›</button></div>';
+  html += '<div class="cal-wrap"><div class="cal-hdr">' + hdr + '</div>';
+  html += '<div class="cal-grid" id="cal-grid">' + cells + '</div></div>';
+  html += legend;
+  html += '<div id="day-panel"></div>';
+
+  document.getElementById('pg-cal').innerHTML = html;
+  document.getElementById('btn-prev-month').onclick = function() { changeMonth(-1); };
+  document.getElementById('btn-next-month').onclick = function() { changeMonth(1); };
+
+  var cellEls = document.getElementById('cal-grid').querySelectorAll('.cell');
+  for (var ci = 0; ci < cellEls.length; ci++) {
+    cellEls[ci].addEventListener('click', (function(ds) {
+      return function() { selectDate(ds); };
+    })(cellEls[ci].getAttribute('data-ds')));
+  }
+
+  buildDayPanel();
+}
+
+function selectDate(ds) {
+  selDate = ds;
+  buildCal();
+  setTimeout(function() { document.getElementById('scroll').scrollTop = 360; }, 50);
+}
+
+// ===== DAY PANEL =====
+var CARE_ITEMS = [
+  {key:'nail', ico:'✂️', name:'剪指甲', days:14, bg:'#EEE8F8'},
+  {key:'litter', ico:'📦', name:'更換貓砂', days:7, bg:'#F5DFD0'},
+  {key:'deworming', ico:'💊', name:'驅蟲', days:30, bg:'#D8EDDB'}
+];
+
+function buildDayPanel() {
+  var dp = document.getElementById('day-panel');
+  if (!dp) return;
+  var r = getRec(selDate);
+  var s = getShared(selDate);
+  var d = new Date(selDate + 'T00:00:00');
+  var wk = ['日','一','二','三','四','五','六'];
+  var lbl = (d.getMonth()+1) + '月' + d.getDate() + '日（' + wk[d.getDay()] + '）';
+  var meds = getCatMeds();
+  var daily = calcDaily(catObj());
+  var ate = calcAte(selDate);
+  var pct = Math.min(ate/daily*100, 100);
+  var over = ate > daily;
+  var meals = getMeals(selDate);
+
+  var recentW = [];
+  var rkeys = Object.keys(D.records);
+  for (var ri = 0; ri < rkeys.length; ri++) {
+    if (rkeys[ri].indexOf(catN()+'|')===0 && D.records[rkeys[ri]].weight) {
+      recentW.push({dt: rkeys[ri].split('|')[1], w: D.records[rkeys[ri]].weight});
+    }
+  }
+  recentW.sort(function(a,b) { return b.dt > a.dt ? 1 : -1; });
+  recentW = recentW.slice(0, 4);
+
+  var html = '';
+
+  // Date header
+  html += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">';
+  html += '<span style="font-size:20px;font-weight:700">' + lbl + '</span>';
+  if (selDate === todayStr) html += '<span class="sub">今天</span>';
+  html += '</div>';
+
+  // 排泄
+  html += '<div class="sec">排泄紀錄<span class="sec-note">（全貓共用）</span></div>';
+  html += '<div class="cnt-grid">';
+  html += '<div class="cnt-card"><div class="cnt-lbl"><span class="cnt-dot" style="background:var(--blu)"></span>小便</div>';
+  html += '<div class="cnt-row"><span class="cnt-val" id="pee-v">' + s.pee + '</span>';
+  html += '<div class="cnt-btns"><button class="cnt-btn" data-t="pee" data-d="1">+</button><button class="cnt-btn" data-t="pee" data-d="-1">-</button></div></div></div>';
+  html += '<div class="cnt-card"><div class="cnt-lbl"><span class="cnt-dot" style="background:var(--amb)"></span>大便</div>';
+  html += '<div class="cnt-row"><span class="cnt-val" id="poo-v">' + s.poop + '</span>';
+  html += '<div class="cnt-btns"><button class="cnt-btn" data-t="poop" data-d="1">+</button><button class="cnt-btn" data-t="poop" data-d="-1">-</button></div></div></div>';
+  html += '</div>';
+
+  // 飲水
+  html += '<div class="sec">飲水紀錄<span class="sec-note">（全貓共用，ml）</span></div>';
+  html += '<div class="card" id="water-card"></div>';
+
+  // 熱量
+  html += '<div class="sec">今日熱量 — ' + catN() + '</div>';
+  html += '<div class="card2">';
+  html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">';
+  html += '<span class="big">' + ate + '</span><span style="font-size:14px;color:var(--t2)">/ ' + daily + ' kcal</span>';
+  html += '<span class="tag ' + (over?'tag-r':pct>85?'tag-a':'tag-g') + '">' + (over?'超標':'正常') + '</span></div>';
+  html += '<div class="prog-bar"><div class="prog-fill' + (over?' over':'') + '" style="width:' + pct + '%"></div></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span class="sub">已攝取 ' + ate + ' kcal</span>';
+  html += '<span class="sub">' + (over?'超出':'剩餘') + ' ' + Math.abs(daily-ate).toFixed(1) + ' kcal</span></div>';
+  if (meals.length > 0) {
+    html += '<div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">';
+    for (var mi = 0; mi < meals.length; mi++) {
+      var mf = foodById(meals[mi].foodId);
+      if (!mf) continue;
+      html += '<div class="meal-row"><span style="font-size:12px;color:var(--t3);width:36px;flex-shrink:0">' + meals[mi].time + '</span>';
+      html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + mf.name + ' ×' + meals[mi].portions + '</div>';
+      html += '<div class="sub">' + (mf.grams*meals[mi].portions).toFixed(0) + 'g</div></div>';
+      html += '<span style="font-size:12px;color:var(--t2)">' + (mf.kcal*meals[mi].portions).toFixed(1) + ' kcal</span></div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div class="empty" style="padding:10px 0 0">點「🍽️ 熱量」新增用餐紀錄</div>';
+  }
+  html += '</div>';
+
+  // 護理
+  html += '<div class="sec">護理紀錄 — ' + catN() + '</div>';
+  html += '<div class="care-list">';
+  for (var ci = 0; ci < CARE_ITEMS.length; ci++) {
+    var item = CARE_ITEMS[ci];
+    var last = lastCareDate(item.key);
+    var ago = last ? Math.floor((new Date() - new Date(last)) / 86400000) : null;
+    var badge = ago===null ? '<span class="tag tag-x">未記錄</span>'
+      : ago >= item.days ? '<span class="tag tag-a">該做了</span>'
+      : '<span class="tag tag-g">' + ago + '天前</span>';
+    html += '<div class="care-row" data-care="' + item.key + '">';
+    html += '<div class="care-ico" style="background:' + item.bg + '">' + item.ico + '</div>';
+    html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + item.name + '</div>';
+    html += '<div style="font-size:11px;color:var(--t3)">' + (last||'點擊記錄') + '</div></div>';
+    html += badge + '</div>';
+  }
+  html += '</div>';
+
+  // 體重
+  html += '<div class="sec">體重 — ' + catN() + '</div>';
+  html += '<div class="card"><div class="row">';
+  html += '<input class="inp-sm" type="number" id="w-inp" step="0.01" min="0" max="20" placeholder="kg" value="' + (r.weight||'') + '" style="width:90px">';
+  html += '<span class="lbl">公斤</span><button class="btn" style="margin-left:auto" id="btn-save-weight">儲存</button></div>';
+  if (recentW.length > 1) {
+    html += '<div style="margin-top:8px">';
+    for (var wi = 0; wi < recentW.length; wi++) {
+      html += '<div class="wh-row"><span style="color:var(--t3)">' + recentW[wi].dt + '</span><span style="font-weight:600">' + recentW[wi].w + ' kg</span></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // 餵藥
+  if (meds.length > 0) {
+    html += '<div class="sec">餵藥紀錄 — ' + catN() + '</div>';
+    for (var medi = 0; medi < meds.length; medi++) {
+      var given = r.meds && r.meds[meds[medi]];
+      html += '<div class="card" style="display:flex;align-items:center;gap:9px;padding:11px 13px;margin-bottom:8px;' + (given?'background:var(--rose-p);border-color:var(--rose-l)':'') + '">';
+      html += '<div class="med-chk" data-medi="' + medi + '" style="width:24px;height:24px;border-radius:7px;border:1.5px solid ' + (given?'var(--rose)':'var(--cr3)') + ';background:' + (given?'var(--rose)':'var(--cr2)') + ';display:flex;align-items:center;justify-content:center;cursor:pointer;color:' + (given?'#fff':'transparent') + ';font-size:13px;flex-shrink:0">✓</div>';
+      html += '<span style="flex:1;font-size:13px;font-weight:500">' + meds[medi] + '</span></div>';
+    }
+  }
+
+  // 備註
+  html += '<div class="sec">備註 — ' + catN() + '</div>';
+  html += '<textarea class="textarea" id="notes-inp" placeholder="記錄顏色、形狀、異常狀況...">' + (r.notes||'') + '</textarea>';
+  html += '<button class="btn" id="save-day-btn" style="width:100%;margin:12px 0 22px;padding:13px;font-size:15px">儲存紀錄</button>';
+
+  dp.innerHTML = html;
+
+  // Bind events
+  document.getElementById('btn-save-weight').onclick = saveWeight;
+  document.getElementById('save-day-btn').onclick = saveDay;
+
+  var cntBtns = dp.querySelectorAll('.cnt-btn');
+  for (var bi = 0; bi < cntBtns.length; bi++) {
+    cntBtns[bi].addEventListener('click', (function(t, d) {
+      return function() { chShared(t, d); };
+    })(cntBtns[bi].getAttribute('data-t'), parseInt(cntBtns[bi].getAttribute('data-d'))));
+  }
+
+  var careRows = dp.querySelectorAll('.care-row');
+  for (var cri = 0; cri < careRows.length; cri++) {
+    careRows[cri].addEventListener('click', (function(key) {
+      return function() { openCareModal(key); };
+    })(careRows[cri].getAttribute('data-care')));
+  }
+
+  var medChks = dp.querySelectorAll('.med-chk');
+  for (var mci = 0; mci < medChks.length; mci++) {
+    medChks[mci].addEventListener('click', (function(idx) {
+      return function() { toggleMed(idx); };
+    })(parseInt(medChks[mci].getAttribute('data-medi'))));
+  }
+
+  buildWaterCard();
+}
+
+// ===== WATER CARD =====
+function buildWaterCard() {
+  var wc = document.getElementById('water-card');
+  if (!wc) return;
+  var s = getShared(selDate);
+  var logs = s.waterLogs || [];
+  var total = 0;
+  for (var i = 0; i < logs.length; i++) total += logs[i].drunk || 0;
+
+  var html = '';
+  if (logs.length > 0) {
+    html += '<div style="font-size:22px;font-weight:700;color:var(--tel);margin-bottom:10px">' + total + ' <span style="font-size:13px;font-weight:400;color:var(--t3)">ml 今日總飲水</span></div>';
+    for (var i2 = 0; i2 < logs.length; i2++) {
+      html += '<div class="water-log-row">';
+      html += '<span style="font-size:12px;color:var(--t3);width:32px;flex-shrink:0">第' + (i2+1) + '次</span>';
+      html += '<div style="flex:1;font-size:12px;color:var(--t2)">加水 ' + logs[i2].added + 'ml &minus; 剩餘 ' + logs[i2].left + 'ml</div>';
+      html += '<span style="font-size:13px;font-weight:600;color:var(--tel)">' + logs[i2].drunk + ' ml</span>';
+      html += '<button class="btn-del wlog-del" data-wi="' + i2 + '">✕</button></div>';
+    }
+    html += '<div style="height:6px"></div>';
+  } else {
+    html += '<div class="empty" style="padding:10px 0">尚未記錄今日飲水</div>';
+  }
+
+  html += '<div style="margin-top:10px;background:var(--cr2);border-radius:11px;padding:12px">';
+  html += '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;font-weight:600">新增換水紀錄</div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">';
+  html += '<span style="font-size:12px;color:var(--t2);width:52px;flex-shrink:0">加水量</span>';
+  html += '<input class="inp-sm" type="number" id="w-added" placeholder="ml" min="0" style="width:80px">';
+  html += '<span style="font-size:12px;color:var(--t3)">ml</span></div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">';
+  html += '<span style="font-size:12px;color:var(--t2);width:52px;flex-shrink:0">剩餘量</span>';
+  html += '<input class="inp-sm" type="number" id="w-left" placeholder="ml" min="0" style="width:80px">';
+  html += '<span style="font-size:12px;color:var(--t3)">ml</span></div>';
+  html += '<div style="display:flex;align-items:center;gap:8px">';
+  html += '<span class="sub" id="w-calc" style="flex:1"></span>';
+  html += '<button class="btn" id="btn-add-water" style="background:var(--tel)">記錄</button></div></div>';
+
+  wc.innerHTML = html;
+
+  var delBtns = wc.querySelectorAll('.wlog-del');
+  for (var di = 0; di < delBtns.length; di++) {
+    delBtns[di].addEventListener('click', (function(wi) {
+      return function() { delWaterLog(wi); };
+    })(parseInt(delBtns[di].getAttribute('data-wi'))));
+  }
+
+  document.getElementById('btn-add-water').onclick = addWaterLog;
+
+  var addedEl = document.getElementById('w-added');
+  var leftEl = document.getElementById('w-left');
+  function calcPreview() {
+    var a = parseFloat(addedEl.value) || 0;
+    var l = parseFloat(leftEl.value) || 0;
+    var calc = document.getElementById('w-calc');
+    if (calc) calc.textContent = a > 0 ? '飲水量 = ' + Math.max(0, a-l) + ' ml' : '';
+  }
+  addedEl.addEventListener('input', calcPreview);
+  leftEl.addEventListener('input', calcPreview);
+}
+
+function addWaterLog() {
+  var added = parseFloat(document.getElementById('w-added').value) || 0;
+  var left = parseFloat(document.getElementById('w-left').value) || 0;
+  if (!added) { alert('請輸入加水量'); return; }
+  var drunk = Math.max(0, added - left);
+  var s = getShared(selDate);
+  s.waterLogs.push({added:added, left:left, drunk:drunk});
+  saveD(); renderCal_light(); buildWaterCard();
+}
+
+function delWaterLog(i) {
+  var s = getShared(selDate);
+  s.waterLogs.splice(i, 1);
+  saveD(); renderCal_light(); buildWaterCard();
+}
+
+// light re-render (just dots, no full rebuild)
+function renderCal_light() {
+  var cells = document.querySelectorAll('#cal-grid .cell');
+  for (var i = 0; i < cells.length; i++) {
+    var ds = cells[i].getAttribute('data-ds');
+    var dots = getDots(ds);
+    var dotsHtml = '';
+    for (var di = 0; di < Math.min(dots.length, 5); di++) {
+      dotsHtml += '<span class="cdot" style="background:' + DOT_COLOR[dots[di]] + '"></span>';
+    }
+    var dd = cells[i].querySelector('.cdots');
+    if (dd) dd.innerHTML = dotsHtml;
+  }
+}
+
+function chShared(type, delta) {
+  var s = getShared(selDate);
+  s[type] = Math.max(0, (s[type]||0) + delta);
+  var ids = {pee:'pee-v', poop:'poo-v'};
+  var el = document.getElementById(ids[type]);
+  if (el) el.textContent = s[type];
+  saveD(); renderCal_light();
+}
+
+function saveWeight() {
+  var r = getRec(selDate);
+  var v = parseFloat(document.getElementById('w-inp').value);
+  r.weight = isNaN(v) ? '' : v;
+  saveD(); renderCal_light(); buildDayPanel();
+}
+
+function toggleMed(i) {
+  var r = getRec(selDate);
+  if (!r.meds) r.meds = {};
+  var m = getCatMeds()[i];
+  r.meds[m] = !r.meds[m];
+  saveD(); buildDayPanel();
+}
+
+function saveDay() {
+  var r = getRec(selDate);
+  r.notes = document.getElementById('notes-inp').value;
+  var v = parseFloat(document.getElementById('w-inp').value);
+  r.weight = isNaN(v) ? '' : v;
+  saveD(); renderCal_light();
+  var b = document.getElementById('save-day-btn');
+  b.textContent = '✓ 已儲存！'; b.style.background = 'var(--grn)';
+  setTimeout(function() { b.textContent = '儲存紀錄'; b.style.background = ''; }, 1600);
+}
+
+// ===== CARE MODAL =====
+function openCareModal(key) {
+  curCareKey = key;
+  var item = null;
+  for (var i = 0; i < CARE_ITEMS.length; i++) if (CARE_ITEMS[i].key===key) { item=CARE_ITEMS[i]; break; }
+  document.getElementById('mcare-title').textContent = '記錄 ' + item.name;
+  document.getElementById('mcare-date').value = lastCareDate(key) || todayStr;
+  openModal('modal-care');
+}
+function confirmCare() {
+  var dt = document.getElementById('mcare-date').value;
+  if (!dt) return;
+  var r = getRec(dt);
+  if (!r.care) r.care = {};
+  r.care[curCareKey] = true;
+  saveD(); closeModal('modal-care'); renderCal_light(); buildDayPanel();
+}
+
+// ===== CALORIE PAGE =====
+function buildCaloriePage() {
+  var daily = calcDaily(catObj()), ate = calcAte(todayStr);
+  var pct = Math.min(ate/daily*100, 100), over = ate > daily;
+  var meals = getMeals(todayStr);
+
+  var html = '<div class="sec" style="margin-top:4px">今日熱量 — ' + catN() + '</div>';
+  html += '<div class="card2">';
+  html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">';
+  html += '<span class="big">' + ate + '</span><span style="font-size:14px;color:var(--t2)">/ ' + daily + ' kcal</span>';
+  html += '<span class="tag ' + (over?'tag-r':pct>85?'tag-a':'tag-g') + '">' + (over?'超標 '+(ate-daily).toFixed(1)+'kcal':pct===0?'未開始':'正常') + '</span></div>';
+  html += '<div class="prog-bar"><div class="prog-fill' + (over?' over':'') + '" style="width:' + pct + '%"></div></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span class="sub">已攝取 ' + ate + ' kcal</span>';
+  html += '<span class="sub">' + (over?'超出':'剩餘') + ' ' + Math.abs(daily-ate).toFixed(1) + ' kcal</span></div></div>';
+
+  html += '<div class="sec">新增用餐</div><div class="card">';
+  html += '<div class="row"><span class="lbl">時間</span><input class="inp-sm" type="time" id="m-time" value="' + nowTime() + '" step="60" style="width:105px"></div>';
+  html += '<div class="row"><span class="lbl">食物</span><select class="sel" id="m-food">';
+  for (var fi = 0; fi < D.foods.length; fi++) {
+    html += '<option value="' + D.foods[fi].id + '">' + D.foods[fi].name + '</option>';
+  }
+  html += '</select></div>';
+  html += '<div class="row"><span class="lbl">份數</span><input class="inp-sm" type="number" id="m-portions" value="1" min="0.5" step="0.5" style="width:70px"><span class="sub" id="m-hint" style="flex:1;text-align:right"></span></div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span class="sub" id="m-prev" style="flex:1"></span><button class="btn" id="btn-add-meal">新增</button></div></div>';
+
+  html += '<div class="sec">今日用餐紀錄</div><div class="card" id="meal-list">';
+  if (meals.length > 0) {
+    for (var mi = 0; mi < meals.length; mi++) {
+      var mf = foodById(meals[mi].foodId);
+      if (!mf) continue;
+      html += '<div class="meal-row"><span style="font-size:12px;color:var(--t3);width:36px;flex-shrink:0">' + meals[mi].time + '</span>';
+      html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + mf.name + '</div>';
+      html += '<div class="sub">' + meals[mi].portions + '份 · ' + (mf.grams*meals[mi].portions).toFixed(0) + 'g</div></div>';
+      html += '<span style="font-size:12px;color:var(--t2);text-align:right">' + (mf.kcal*meals[mi].portions).toFixed(1) + '<br><span style="font-size:10px;color:var(--t3)">kcal</span></span>';
+      html += '<button class="btn-del meal-del" data-mid="' + meals[mi].id + '">✕</button></div>';
+    }
+  } else {
+    html += '<div class="empty">尚無紀錄</div>';
+  }
+  html += '</div>';
+
+  document.getElementById('pg-calorie').innerHTML = html;
+
+  function updatePrev() {
+    var fid = parseInt(document.getElementById('m-food').value);
+    var portions = parseFloat(document.getElementById('m-portions').value) || 1;
+    var f = foodById(fid);
+    if (!f) return;
+    document.getElementById('m-hint').textContent = '每份 ' + f.grams + 'g';
+    document.getElementById('m-prev').textContent = '→ ' + (f.grams*portions).toFixed(0) + 'g，' + (f.kcal*portions).toFixed(1) + ' kcal';
+  }
+  document.getElementById('m-food').onchange = updatePrev;
+  document.getElementById('m-portions').oninput = updatePrev;
+  document.getElementById('btn-add-meal').onclick = function() {
+    var fid = parseInt(document.getElementById('m-food').value);
+    var portions = parseFloat(document.getElementById('m-portions').value) || 1;
+    var time = document.getElementById('m-time').value || nowTime();
+    var k = catN() + '|' + todayStr;
+    if (!D.meals[k]) D.meals[k] = [];
+    D.meals[k].push({id:D.nextId++, foodId:fid, portions:portions, time:time});
+    D.meals[k].sort(function(a,b) { return a.time > b.time ? 1 : -1; });
+    saveD(); buildCaloriePage();
+  };
+  var delBtns = document.querySelectorAll('.meal-del');
+  for (var di = 0; di < delBtns.length; di++) {
+    delBtns[di].addEventListener('click', (function(mid) {
+      return function() {
+        var k = catN() + '|' + todayStr;
+        D.meals[k] = (D.meals[k]||[]).filter(function(m) { return m.id !== mid; });
+        saveD(); buildCaloriePage();
+      };
+    })(parseInt(delBtns[di].getAttribute('data-mid'))));
+  }
+  updatePrev();
+}
+
+// ===== FOODS PAGE =====
+function buildFoodsPage() {
+  var html = '<div class="sec" style="margin-top:4px">食物庫（所有貓共用）</div><div class="card">';
+  if (D.foods.length > 0) {
+    for (var i = 0; i < D.foods.length; i++) {
+      html += '<div class="food-row"><div style="flex:1"><div style="font-size:13px;font-weight:500">' + D.foods[i].name + '</div>';
+      html += '<div class="sub">每份 ' + D.foods[i].grams + 'g · ' + D.foods[i].kcal + ' kcal/份</div></div>';
+      html += '<button class="btn-del food-del" data-fid="' + D.foods[i].id + '">✕</button></div>';
+    }
+  } else { html += '<div class="empty">尚無食物</div>'; }
+  html += '</div>';
+
+  html += '<div class="sec">新增食物</div><div class="card">';
+  html += '<div class="row"><span class="lbl" style="width:52px">名稱</span><input class="inp" id="f-name" placeholder="例：O30 主食罐"></div>';
+  html += '<div class="row"><span class="lbl" style="width:52px">每份</span><input class="inp-sm" type="number" id="f-grams" placeholder="克" min="1" style="width:65px"><span class="lbl">克</span>';
+  html += '<input class="inp-sm" type="number" id="f-kcal" placeholder="大卡" min="0" style="width:75px;margin-left:4px"><span class="lbl">kcal/份</span></div>';
+  html += '<div style="background:var(--cr2);border-radius:10px;padding:10px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+  html += '<span class="sub">或填每 100g 熱量：</span><input class="inp-sm" type="number" id="f-per100" placeholder="kcal" style="width:90px">';
+  html += '<button class="btn btn-g" id="btn-calc100" style="padding:7px 12px">換算</button></div>';
+  html += '<div style="display:flex;justify-content:flex-end"><button class="btn" id="btn-add-food">新增食物</button></div></div>';
+
+  document.getElementById('pg-foods').innerHTML = html;
+
+  document.getElementById('btn-calc100').onclick = function() {
+    var g = parseFloat(document.getElementById('f-grams').value) || 0;
+    var p = parseFloat(document.getElementById('f-per100').value) || 0;
+    if (g && p) document.getElementById('f-kcal').value = Math.round(g*p/100*10)/10;
+  };
+  document.getElementById('btn-add-food').onclick = function() {
+    var name = document.getElementById('f-name').value.trim();
+    var grams = parseFloat(document.getElementById('f-grams').value) || 0;
+    var kcal = parseFloat(document.getElementById('f-kcal').value) || 0;
+    if (!name||!grams||!kcal) { alert('請填寫名稱、每份克數和每份熱量'); return; }
+    D.foods.push({id:D.nextId++, name:name, grams:grams, kcal:kcal});
+    saveD(); buildFoodsPage();
+  };
+  var delBtns = document.querySelectorAll('.food-del');
+  for (var di = 0; di < delBtns.length; di++) {
+    delBtns[di].addEventListener('click', (function(fid) {
+      return function() {
+        D.foods = D.foods.filter(function(f) { return f.id !== fid; });
+        saveD(); buildFoodsPage();
+      };
+    })(parseInt(delBtns[di].getAttribute('data-fid'))));
+  }
+}
+
+// ===== SETTINGS PAGE =====
+function buildSettingsPage() {
+  var c = catObj(), meds = getCatMeds();
+  var w = parseFloat(c.weight) || 0;
+  var s = parseFloat(c.status) || 1.2;
+  var rv = Math.round(calcRer(w)*10)/10;
+  var daily = Math.round(rv*s*10)/10;
+
+  var statuses = [
+    ['2.5','幼貓（4個月以下）×2.5'],
+    ['2.0','幼貓（4～12個月）×2.0'],
+    ['1.4','成貓（未結紮）×1.4'],
+    ['1.2','成貓（已結紮，體重正常）×1.2'],
+    ['1.1','熟齡/高齡貓（活動量低）×1.1'],
+    ['0.8','需要減肥的貓 ×0.8'],
+    ['1.4b','偏瘦需增重 ×1.4']
+  ];
+
+  var cfg = getFBConfig();
+  var syncLabel = cfg ? '☁️ 雲端同步：已連線 (' + cfg.projectId + ')' : '☁️ 雲端同步：未設定';
+  var syncColor = cfg ? 'var(--grn)' : 'var(--t3)';
+  var html = '<div class="sec" style="margin-top:4px">雲端同步</div>';
+  html += '<div class="card" style="display:flex;align-items:center;gap:10px;cursor:pointer" id="btn-open-fb">';
+  html += '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:' + syncColor + '">' + syncLabel + '</div>';
+  html += '<div class="sub">點擊設定，與家人共享即時資料</div></div>';
+  html += '<span style="font-size:18px">›</span></div>';
+  html += '<div class="sec">貓咪資訊 — ' + catN() + '</div><div class="card">';
+  html += '<div class="row"><span class="lbl" style="width:52px">名稱</span><input class="inp" id="s-name" value="' + (c.name||'') + '"></div>';
+  html += '<div class="row"><span class="lbl" style="width:52px">體重</span><input class="inp-sm" type="number" id="s-weight" value="' + (c.weight||'') + '" min="0.1" step="0.1" style="width:80px"><span class="lbl">公斤</span></div>';
+  html += '<div class="row"><span class="lbl" style="width:52px">狀態</span><select class="sel" id="s-status">';
+  for (var si = 0; si < statuses.length; si++) {
+    html += '<option value="' + statuses[si][0] + '"' + (c.status===statuses[si][0]?' selected':'') + '>' + statuses[si][1] + '</option>';
+  }
+  html += '</select></div>';
+  html += '<div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn" id="btn-save-cat">儲存設定</button></div></div>';
+
+  html += '<div class="card2" id="rer-card">';
+  if (w) {
+    html += '<div class="g2"><div class="s-card"><div style="font-size:11px;color:var(--t3);margin-bottom:3px">RER 基礎代謝</div><div style="font-size:22px;font-weight:700">' + rv + '</div><div class="sub">kcal/天</div></div>';
+    html += '<div class="s-card"><div style="font-size:11px;color:var(--t3);margin-bottom:3px">每日熱量目標</div><div style="font-size:22px;font-weight:700">' + daily + '</div><div class="sub">kcal/天</div></div></div>';
+    html += '<div class="sub" style="margin-top:10px">RER = 30 × ' + w + ' + 70 = ' + rv + '，× ' + s + ' = ' + daily + ' kcal</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="sec">藥物管理</div><div class="card">';
+  if (meds.length > 0) {
+    for (var mi = 0; mi < meds.length; mi++) {
+      html += '<div class="food-row"><span style="flex:1;font-size:13px;font-weight:500">' + meds[mi] + '</span>';
+      html += '<button class="btn-del med-del" data-mi="' + mi + '">✕</button></div>';
+    }
+  } else { html += '<div class="empty">尚無藥物</div>'; }
+  html += '</div>';
+  html += '<div class="card" style="display:flex;gap:8px;align-items:center">';
+  html += '<input class="inp" id="med-inp" placeholder="新增藥物名稱" style="flex:1;margin:0" maxlength="20">';
+  html += '<button class="btn" id="btn-add-med">新增</button></div>';
+
+  document.getElementById('pg-settings').innerHTML = html;
+
+  function updateRer() {
+    var wv = parseFloat(document.getElementById('s-weight').value) || 0;
+    var sv = parseFloat(document.getElementById('s-status').value) || 1.2;
+    var rc = Math.round(calcRer(wv)*10)/10;
+    var dc = Math.round(rc*sv*10)/10;
+    var card = document.getElementById('rer-card');
+    if (!card) return;
+    if (wv) {
+      card.innerHTML = '<div class="g2"><div class="s-card"><div style="font-size:11px;color:var(--t3);margin-bottom:3px">RER 基礎代謝</div><div style="font-size:22px;font-weight:700">' + rc + '</div><div class="sub">kcal/天</div></div><div class="s-card"><div style="font-size:11px;color:var(--t3);margin-bottom:3px">每日熱量目標</div><div style="font-size:22px;font-weight:700">' + dc + '</div><div class="sub">kcal/天</div></div></div><div class="sub" style="margin-top:10px">RER = 30 × ' + wv + ' + 70 = ' + rc + '，× ' + sv + ' = ' + dc + ' kcal</div>';
+    } else { card.innerHTML = ''; }
+  }
+
+  document.getElementById('btn-open-fb').onclick = openFBModal;
+  document.getElementById('s-weight').addEventListener('input', updateRer);
+  document.getElementById('s-status').addEventListener('change', updateRer);
+  document.getElementById('btn-save-cat').onclick = function() {
+    c.name = document.getElementById('s-name').value.trim() || c.name;
+    c.weight = parseFloat(document.getElementById('s-weight').value) || c.weight;
+    c.status = document.getElementById('s-status').value;
+    saveD(); renderCatBar(); buildSettingsPage();
+  };
+  document.getElementById('btn-add-med').onclick = function() {
+    var v = document.getElementById('med-inp').value.trim();
+    if (!v) return;
+    var m = getCatMeds();
+    if (m.indexOf(v) === -1) { m.push(v); saveD(); }
+    document.getElementById('med-inp').value = '';
+    buildSettingsPage();
+  };
+  document.getElementById('med-inp').addEventListener('keydown', function(e) {
+    if (e.key==='Enter') document.getElementById('btn-add-med').click();
+  });
+  var delBtns = document.querySelectorAll('.med-del');
+  for (var di = 0; di < delBtns.length; di++) {
+    delBtns[di].addEventListener('click', (function(mi) {
+      return function() { getCatMeds().splice(mi,1); saveD(); buildSettingsPage(); };
+    })(parseInt(delBtns[di].getAttribute('data-mi'))));
+  }
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
+
+init();
+</script>
+</body>
+</html>

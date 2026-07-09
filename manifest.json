@@ -1,0 +1,14 @@
+{
+  "name": "貓咪健康日誌",
+  "short_name": "貓日誌",
+  "description": "記錄貓咪每日健康狀況",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FAF6EF",
+  "theme_color": "#FAF6EF",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
