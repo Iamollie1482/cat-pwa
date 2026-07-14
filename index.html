@@ -10,9 +10,6 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>貓咪健康日誌</title>
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --cr:#FAF6EF;--cr2:#F3EDE2;--cr3:#E8DFD0;
@@ -120,6 +117,15 @@ body{display:flex;flex-direction:column;max-width:430px;margin:0 auto;overflow:h
 .prog-fill{height:100%;border-radius:6px;background:var(--rose);transition:width .4s}
 .prog-fill.over{background:var(--red)}
 
+/* COMPACT REC ROWS */
+.rec-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:0.5px solid var(--bd)}
+.rec-lbl{flex:1;font-size:13px;font-weight:500;color:var(--t1);display:flex;align-items:center;gap:5px}
+.rec-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.rec-val{font-size:17px;font-weight:700;min-width:24px;text-align:center;color:var(--t1)}
+.rec-btn{width:26px;height:26px;border-radius:7px;background:var(--cr2);border:0.5px solid var(--bd);cursor:pointer;font-size:15px;font-weight:600;color:var(--t1);display:flex;align-items:center;justify-content:center}
+.rec-btn:active{transform:scale(.88)}
+.cat-tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;background:var(--rose-l);color:var(--rose)}
+
 /* WATER */
 .water-log-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)}
 .water-log-row:last-child{border-bottom:none}
@@ -190,20 +196,19 @@ input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
   </div>
 </div>
 
-<!-- FIREBASE CONFIG MODAL -->
+<!-- GOOGLE SHEETS SYNC MODAL -->
 <div class="modal-bg" id="modal-fb">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>🔗 雲端同步設定</h3>
-    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;line-height:1.6">輸入 Firebase 設定後，所有裝置會即時共用同一份資料。<br><a href="https://console.firebase.google.com" target="_blank" style="color:var(--rose)">→ Firebase Console</a> 取得設定值</p>
-    <input class="inp" id="fb-apikey" placeholder="apiKey" style="margin-bottom:8px">
-    <input class="inp" id="fb-projectid" placeholder="projectId" style="margin-bottom:8px">
-    <input class="inp" id="fb-appid" placeholder="appId" style="margin-bottom:14px">
+    <h3>📊 Google Sheets 同步設定</h3>
+    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;line-height:1.6">貼上 Apps Script 網址後，資料會同步到 Google Sheets，家人也可以即時共用。</p>
+    <label style="font-size:12px;color:var(--t3);display:block;margin-bottom:4px">Apps Script 網址</label>
+    <input class="inp" id="fb-apikey" placeholder="https://script.google.com/macros/s/..." style="margin-bottom:14px">
     <div style="display:flex;gap:8px">
       <button class="btn btn-g" style="flex:1" id="fb-cancel">取消</button>
-      <button class="btn" style="flex:1" id="fb-save">連線</button>
+      <button class="btn" style="flex:1" id="fb-save">連線並匯入資料</button>
     </div>
-    <button id="fb-disconnect" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷雲端連線（改用本機儲存）</button>
+    <button id="fb-disconnect" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷連線（改用本機儲存）</button>
   </div>
 </div>
 
@@ -249,31 +254,16 @@ function defaultData() {
   };
 }
 
-// ===== FIREBASE SYNC =====
-var db = null;
-var FB_SK = 'catFBConfig';
-var DOC_ID = 'sharedData';
-var COLL = 'catHealth';
+// ===== GOOGLE SHEETS SYNC =====
+var GS_SK = 'catGSUrl';
+var gsUrl = null;
 var syncPending = false;
 
-function getFBConfig() {
-  try { var r = localStorage.getItem(FB_SK); return r ? JSON.parse(r) : null; } catch(e) { return null; }
+function getGSUrl() {
+  try { return localStorage.getItem(GS_SK) || null; } catch(e) { return null; }
 }
-function saveFBConfig(cfg) {
-  try { localStorage.setItem(FB_SK, JSON.stringify(cfg)); } catch(e) {}
-}
-
-function initFirebase(cfg) {
-  try {
-    if (firebase.apps.length) firebase.apps.forEach(function(a){ try{a.delete();}catch(e){} });
-    var app = firebase.initializeApp({
-      apiKey: cfg.apiKey,
-      projectId: cfg.projectId,
-      appId: cfg.appId
-    });
-    db = firebase.firestore(app);
-    return true;
-  } catch(e) { console.error('Firebase init error:', e); return false; }
+function saveGSUrl(url) {
+  try { localStorage.setItem(GS_SK, url); } catch(e) {}
 }
 
 function setSyncStatus(msg, color) {
@@ -281,66 +271,71 @@ function setSyncStatus(msg, color) {
   if (el) { el.textContent = msg; el.style.color = color || 'var(--t3)'; }
 }
 
-function syncToCloud() {
-  if (!db) return;
-  setSyncStatus('☁️ 同步中...', 'var(--t3)');
-  var payload = JSON.parse(JSON.stringify(D));
-  payload._updated = Date.now();
-  db.collection(COLL).doc(DOC_ID).set(payload)
-    .then(function() { setSyncStatus('☁️ 已同步', 'var(--grn)'); })
-    .catch(function(e) { setSyncStatus('⚠️ 同步失敗', 'var(--red)'); console.error(e); });
-}
-
-function loadFromCloud(callback) {
-  if (!db) { callback(false); return; }
-  setSyncStatus('☁️ 載入雲端資料...', 'var(--t3)');
-  db.collection(COLL).doc(DOC_ID).get()
-    .then(function(doc) {
-      if (doc.exists) {
-        var data = doc.data();
-        delete data._updated;
-        D = data;
-        try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-        setSyncStatus('☁️ 雲端同步中', 'var(--grn)');
-        callback(true);
-      } else {
-        setSyncStatus('☁️ 雲端同步中', 'var(--grn)');
-        callback(false);
-      }
-    })
-    .catch(function(e) {
-      setSyncStatus('⚠️ 雲端連線失敗，使用本機資料', 'var(--amb)');
-      console.error(e); callback(false);
-    });
-}
-
-function startRealtimeSync() {
-  if (!db) return;
-  db.collection(COLL).doc(DOC_ID).onSnapshot(function(doc) {
-    if (doc.exists && doc.metadata.hasPendingWrites === false) {
-      var data = doc.data();
-      if (!data._updated) return;
-      var localTs = D._updated || 0;
-      if (data._updated > localTs) {
-        delete data._updated;
-        D = data;
-        try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-        setSyncStatus('☁️ 已更新', 'var(--grn)');
-        if (curPage === 'cal') { buildCal(); buildDayPanel(); }
-        else if (curPage === 'calorie') buildCaloriePage();
-        else if (curPage === 'settings') buildSettingsPage();
-        renderCatBar();
-      }
+function gsPost(payload, callback) {
+  if (!gsUrl) { if (callback) callback(null); return; }
+  setSyncStatus('📊 同步中...', 'var(--t3)');
+  fetch(gsUrl, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      setSyncStatus('📊 已同步 Sheets', 'var(--grn)');
+    } else {
+      setSyncStatus('⚠️ ' + (data.message || '同步失敗'), 'var(--red)');
     }
-  }, function(e) { console.error('Snapshot error:', e); });
+    if (callback) callback(data);
+  })
+  .catch(function(e) {
+    setSyncStatus('⚠️ 網路錯誤', 'var(--red)');
+    if (callback) callback(null);
+  });
+}
+
+function bulkSyncToSheets(callback) {
+  gsPost({action: 'bulkSync', data: D}, function(res) {
+    if (callback) callback(res && res.ok);
+  });
+}
+
+function syncDayToSheets(date) {
+  if (!gsUrl) return;
+  var cat = catObj();
+  var r = getRec(date);
+  var s = getShared(date);
+  var meals = getMeals(date);
+  var catMedsArr = getCatMeds();
+
+  // 計算熱量
+  var mealDetails = meals.map(function(m) {
+    var f = foodById(m.foodId);
+    return {time: m.time, name: f ? f.name : '?', portions: m.portions, kcal: f ? f.kcal * m.portions : 0};
+  });
+  var totalKcal = mealDetails.reduce(function(s2, m) { return s2 + m.kcal; }, 0);
+
+  gsPost({
+    action: 'syncDay',
+    date: date,
+    catName: catN(),
+    rec: {
+      weight: r.weight,
+      kcal: Math.round(totalKcal * 10) / 10,
+      dailyTarget: calcDaily(cat),
+      vomit: r.vomit || 0,
+      care: r.care || {},
+      notes: r.notes || ''
+    },
+    shared: s,
+    meals: mealDetails,
+    meds: catMedsArr.map(function(mn) { return {name: mn, given: r.meds && r.meds[mn] ? true : false}; })
+  });
 }
 
 function openFBModal() {
-  var cfg = getFBConfig();
-  document.getElementById('fb-apikey').value = cfg ? cfg.apiKey : '';
-  document.getElementById('fb-projectid').value = cfg ? cfg.projectId : '';
-  document.getElementById('fb-appid').value = cfg ? cfg.appId : '';
-  document.getElementById('fb-disconnect').style.display = cfg ? '' : 'none';
+  var url = getGSUrl();
+  document.getElementById('fb-apikey').value = url || '';
+  document.getElementById('fb-disconnect').style.display = url ? '' : 'none';
   openModal('modal-fb');
 }
 
@@ -351,9 +346,9 @@ function loadD() {
 }
 function saveD() {
   try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-  if (db) {
+  if (gsUrl) {
     clearTimeout(syncPending);
-    syncPending = setTimeout(syncToCloud, 1200);
+    syncPending = setTimeout(function() { syncDayToSheets(selDate || todayStr); }, 1500);
   }
 }
 
@@ -434,23 +429,14 @@ function init() {
   viewY = todayD.getFullYear(); viewM = todayD.getMonth();
   selDate = todayStr;
   bindEvents();
-
-  var cfg = getFBConfig();
-  if (cfg && cfg.apiKey && cfg.projectId && cfg.appId) {
-    if (initFirebase(cfg)) {
-      loadFromCloud(function(loaded) {
-        if (loaded) { renderCatBar(); showPage('cal'); }
-        else { renderCatBar(); showPage('cal'); }
-        startRealtimeSync();
-      });
-    } else {
-      setSyncStatus('⚠️ Firebase 設定有誤', 'var(--red)');
-      renderCatBar(); showPage('cal');
-    }
+  gsUrl = getGSUrl();
+  if (gsUrl) {
+    setSyncStatus('📊 已連線 Sheets', 'var(--grn)');
   } else {
-    setSyncStatus('未連線雲端', 'var(--t3)');
-    renderCatBar(); showPage('cal');
+    setSyncStatus('未連線 Sheets', 'var(--t3)');
   }
+  renderCatBar();
+  showPage('cal');
 }
 
 // ===== EVENTS =====
@@ -467,30 +453,52 @@ function bindEvents() {
   document.getElementById('modal-fb').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-fb'); });
   document.getElementById('fb-cancel').onclick = function() { closeModal('modal-fb'); };
   document.getElementById('fb-save').onclick = function() {
-    var cfg = {
-      apiKey: document.getElementById('fb-apikey').value.trim(),
-      projectId: document.getElementById('fb-projectid').value.trim(),
-      appId: document.getElementById('fb-appid').value.trim()
-    };
-    if (!cfg.apiKey || !cfg.projectId || !cfg.appId) { alert('請填寫所有欄位'); return; }
-    saveFBConfig(cfg);
-    if (initFirebase(cfg)) {
-      closeModal('modal-fb');
-      loadFromCloud(function(loaded) {
-        if (loaded) { renderCatBar(); showPage(curPage); }
-        startRealtimeSync();
-        syncToCloud();
-      });
-    } else {
-      alert('Firebase 設定有誤，請確認');
+    var url = document.getElementById('fb-apikey').value.trim();
+    if (!url || url.indexOf('script.google.com') === -1) {
+      alert('請貼上正確的 Apps Script 網址（以 https://script.google.com 開頭）');
+      return;
     }
+    var btn = document.getElementById('fb-save');
+    btn.textContent = '連線中...'; btn.disabled = true;
+    // 先測試連線
+    fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        saveGSUrl(url); gsUrl = url;
+        closeModal('modal-fb');
+        setSyncStatus('📊 連線成功，匯入資料中...', 'var(--grn)');
+        // 初始化分頁
+        var catNames = D.cats.map(function(c) { return c.name; });
+        gsPost({action: 'init', catNames: catNames}, function() {
+          // 匯入所有現有資料
+          bulkSyncToSheets(function(ok) {
+            btn.textContent = '連線並匯入資料'; btn.disabled = false;
+            if (ok) {
+              setSyncStatus('📊 已同步 Sheets', 'var(--grn)');
+              buildSettingsPage();
+              alert('連線成功！現有資料已全部匯入 Google Sheets。');
+            } else {
+              setSyncStatus('⚠️ 匯入失敗，請重試', 'var(--red)');
+            }
+          });
+        });
+      } else {
+        throw new Error('API 回應錯誤');
+      }
+    })
+    .catch(function() {
+      btn.textContent = '連線並匯入資料'; btn.disabled = false;
+      alert('連線失敗，請確認網址是否正確，且 Apps Script 已部署為「所有人可存取」。');
+    });
   };
   document.getElementById('fb-disconnect').onclick = function() {
-    if (!confirm('確定中斷雲端連線？資料仍保留在本機。')) return;
-    localStorage.removeItem(FB_SK);
-    db = null;
-    setSyncStatus('未連線雲端', 'var(--t3)');
+    if (!confirm('確定中斷 Sheets 連線？資料仍保留在本機。')) return;
+    localStorage.removeItem(GS_SK);
+    gsUrl = null;
+    setSyncStatus('未連線 Sheets', 'var(--t3)');
     closeModal('modal-fb');
+    buildSettingsPage();
   };
   document.getElementById('nav-cal').onclick = function() { showPage('cal'); };
   document.getElementById('nav-calorie').onclick = function() { showPage('calorie'); };
@@ -675,28 +683,59 @@ function buildDayPanel() {
   if (selDate === todayStr) html += '<span class="sub">今天</span>';
   html += '</div>';
 
-  // 排泄 + 嘔吐
-  html += '<div class="sec">排泄紀錄<span class="sec-note">（全貓共用）</span></div>';
-  html += '<div class="cnt-grid">';
-  html += '<div class="cnt-card"><div class="cnt-lbl"><span class="cnt-dot" style="background:var(--blu)"></span>小便</div>';
-  html += '<div class="cnt-row"><span class="cnt-val" id="pee-v">' + s.pee + '</span>';
-  html += '<div class="cnt-btns"><button class="cnt-btn" data-t="pee" data-d="1">+</button><button class="cnt-btn" data-t="pee" data-d="-1">-</button></div></div></div>';
-  html += '<div class="cnt-card"><div class="cnt-lbl"><span class="cnt-dot" style="background:var(--amb)"></span>大便</div>';
-  html += '<div class="cnt-row"><span class="cnt-val" id="poo-v">' + s.poop + '</span>';
-  html += '<div class="cnt-btns"><button class="cnt-btn" data-t="poop" data-d="1">+</button><button class="cnt-btn" data-t="poop" data-d="-1">-</button></div></div></div>';
-  html += '</div>';
+  // 排泄 + 嘔吐 + 飲水 — 緊湊條列式
+  html += '<div class="sec">今日紀錄</div>';
+  html += '<div class="card" style="padding:0">';
 
-  // 嘔吐（個別貓咪）
-  html += '<div class="sec">嘔吐紀錄<span class="sec-note">（' + catN() + '）</span></div>';
-  html += '<div class="cnt-grid">';
-  html += '<div class="cnt-card"><div class="cnt-lbl"><span class="cnt-dot" style="background:var(--red)"></span>嘔吐次數</div>';
-  html += '<div class="cnt-row"><span class="cnt-val" id="vom-v">' + (r.vomit||0) + '</span>';
-  html += '<div class="cnt-btns"><button class="cnt-btn" data-t="vomit" data-d="1">+</button><button class="cnt-btn" data-t="vomit" data-d="-1">-</button></div></div></div>';
-  html += '</div>';
+  // 小便
+  html += '<div class="rec-row">';
+  html += '<span class="cnt-dot" style="background:var(--blu);flex-shrink:0;width:7px;height:7px"></span>';
+  html += '<span class="rec-lbl">小便 <span class="sec-note" style="font-size:11px">全貓共用</span></span>';
+  html += '<div class="rec-right">';
+  html += '<button class="rec-btn" data-t="pee" data-d="-1">−</button>';
+  html += '<span class="rec-val" id="pee-v">' + s.pee + '</span>';
+  html += '<button class="rec-btn" data-t="pee" data-d="1">+</button>';
+  html += '</div></div>';
+
+  // 大便
+  html += '<div class="rec-row">';
+  html += '<span class="cnt-dot" style="background:var(--amb);flex-shrink:0;width:7px;height:7px"></span>';
+  html += '<span class="rec-lbl">大便 <span class="sec-note" style="font-size:11px">全貓共用</span></span>';
+  html += '<div class="rec-right">';
+  html += '<button class="rec-btn" data-t="poop" data-d="-1">−</button>';
+  html += '<span class="rec-val" id="poo-v">' + s.poop + '</span>';
+  html += '<button class="rec-btn" data-t="poop" data-d="1">+</button>';
+  html += '</div></div>';
 
   // 飲水
-  html += '<div class="sec">飲水紀錄<span class="sec-note">（全貓共用，ml）</span></div>';
-  html += '<div class="card" id="water-card"></div>';
+  var wLogs = (s.waterLogs || []);
+  var wTotal = wLogs.reduce(function(a,l){return a+(l.drunk||0);}, 0);
+  html += '<div class="rec-row" style="align-items:flex-start;border-bottom:none;padding-bottom:12px">';
+  html += '<span class="cnt-dot" style="background:var(--tel);flex-shrink:0;width:7px;height:7px;margin-top:4px"></span>';
+  html += '<div style="flex:1;min-width:0">';
+  // 飲水標題列
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:' + (wLogs.length > 0 ? '6px' : '8px') + '">';
+  html += '<span style="font-size:13px;font-weight:500;color:var(--t1)">飲水 <span class="sec-note" style="font-size:11px">全貓共用</span></span>';
+  html += '<span style="font-size:14px;font-weight:700;color:var(--tel)">' + (wTotal > 0 ? wTotal + ' ml' : '—') + '</span>';
+  html += '</div>';
+  // 已記錄的換水
+  for (var wli = 0; wli < wLogs.length; wli++) {
+    html += '<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;font-size:12px">';
+    html += '<span style="color:var(--t3);width:28px;flex-shrink:0">第'+(wli+1)+'次</span>';
+    html += '<span style="flex:1;color:var(--t2)">加'+wLogs[wli].added+'−剩'+wLogs[wli].left+' = <b style="color:var(--tel)">'+wLogs[wli].drunk+' ml</b></span>';
+    html += '<button class="btn-del wlog-del" data-wi="'+wli+'" style="width:20px;height:20px;font-size:11px;flex-shrink:0">✕</button>';
+    html += '</div>';
+  }
+  // 新增換水輸入
+  html += '<div style="display:flex;gap:5px;align-items:center;margin-top:' + (wLogs.length > 0 ? '4px' : '0') + '">';
+  html += '<input class="inp-sm" type="number" id="w-added" placeholder="加水 ml" min="0" style="width:80px;font-size:12px;padding:6px 8px">';
+  html += '<input class="inp-sm" type="number" id="w-left" placeholder="剩餘 ml" min="0" style="width:80px;font-size:12px;padding:6px 8px">';
+  html += '<span class="sub" id="w-calc" style="flex:1;font-size:11px;white-space:nowrap"></span>';
+  html += '<button class="btn" id="btn-add-water" style="background:var(--tel);padding:6px 12px;font-size:12px;flex-shrink:0">記錄</button>';
+  html += '</div>';
+  html += '</div>';
+  html += '</div>'; // end rec-row
+  html += '</div>'; // end card
 
   // 熱量
   html += '<div class="sec">今日熱量 — ' + catN() + '</div>';
@@ -739,6 +778,16 @@ function buildDayPanel() {
     html += '<div style="font-size:11px;color:var(--t3)">' + (last||'點擊記錄') + '</div></div>';
     html += badge + '</div>';
   }
+  // 嘔吐（獨立計次，不需要日期）
+  html += '<div class="care-row" style="cursor:default">';
+  html += '<div class="care-ico" style="background:#FDEAEA">🤢</div>';
+  html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">嘔吐次數</div>';
+  html += '<div style="font-size:11px;color:var(--t3)">' + catN() + ' 專屬</div></div>';
+  html += '<div style="display:flex;align-items:center;gap:6px">';
+  html += '<button class="rec-btn" data-t="vomit" data-d="-1">−</button>';
+  html += '<span style="font-size:17px;font-weight:700;min-width:24px;text-align:center" id="vom-v">' + (r.vomit||0) + '</span>';
+  html += '<button class="rec-btn" data-t="vomit" data-d="1">+</button>';
+  html += '</div></div>';
   html += '</div>';
 
   // 體重
@@ -777,7 +826,7 @@ function buildDayPanel() {
   document.getElementById('btn-save-weight').onclick = saveWeight;
   document.getElementById('save-day-btn').onclick = saveDay;
 
-  var cntBtns = dp.querySelectorAll('.cnt-btn');
+  var cntBtns = dp.querySelectorAll('.rec-btn');
   for (var bi = 0; bi < cntBtns.length; bi++) {
     cntBtns[bi].addEventListener('click', (function(t, d) {
       return function() {
@@ -785,6 +834,26 @@ function buildDayPanel() {
         else { chShared(t, d); }
       };
     })(cntBtns[bi].getAttribute('data-t'), parseInt(cntBtns[bi].getAttribute('data-d'))));
+  }
+
+  // water inline events
+  var addWaterBtn = document.getElementById('btn-add-water');
+  if (addWaterBtn) addWaterBtn.onclick = addWaterLog;
+  var addedEl = document.getElementById('w-added');
+  var leftEl = document.getElementById('w-left');
+  function calcPreview() {
+    var a = parseFloat(addedEl ? addedEl.value : 0) || 0;
+    var l = parseFloat(leftEl ? leftEl.value : 0) || 0;
+    var calc = document.getElementById('w-calc');
+    if (calc) calc.textContent = a > 0 ? '= ' + Math.max(0, a-l) + ' ml' : '';
+  }
+  if (addedEl) addedEl.addEventListener('input', calcPreview);
+  if (leftEl) leftEl.addEventListener('input', calcPreview);
+  var wlogDels = dp.querySelectorAll('.wlog-del');
+  for (var wdi = 0; wdi < wlogDels.length; wdi++) {
+    wlogDels[wdi].addEventListener('click', (function(wi) {
+      return function() { delWaterLog(wi); };
+    })(parseInt(wlogDels[wdi].getAttribute('data-wi'))));
   }
 
   var careRows = dp.querySelectorAll('.care-row');
@@ -1098,9 +1167,9 @@ function buildSettingsPage() {
     ['1.4b','偏瘦需增重 ×1.4']
   ];
 
-  var cfg = getFBConfig();
-  var syncLabel = cfg ? '☁️ 雲端同步：已連線 (' + cfg.projectId + ')' : '☁️ 雲端同步：未設定';
-  var syncColor = cfg ? 'var(--grn)' : 'var(--t3)';
+  var url = getGSUrl();
+  var syncLabel = url ? '📊 Google Sheets：已連線' : '📊 Google Sheets：未設定';
+  var syncColor = url ? 'var(--grn)' : 'var(--t3)';
   var html = '<div class="sec" style="margin-top:4px">雲端同步</div>';
   html += '<div class="card" style="display:flex;align-items:center;gap:10px;cursor:pointer" id="btn-open-fb">';
   html += '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:' + syncColor + '">' + syncLabel + '</div>';
