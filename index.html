@@ -1205,6 +1205,14 @@ function buildSettingsPage() {
   html += '<input class="inp" id="med-inp" placeholder="新增藥物名稱" style="flex:1;margin:0" maxlength="20">';
   html += '<button class="btn" id="btn-add-med">新增</button></div>';
 
+  html += '<div class="sec">危險區域</div>';
+  html += '<div class="card" style="border-color:var(--red-l)">';
+  html += '<div style="font-size:13px;color:var(--t2);margin-bottom:12px">遇到 BUG 或想重新開始，可以清除資料。</div>';
+  html += '<button id="btn-reset-data" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid var(--red-l);background:var(--red-l);color:var(--red);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px">🗑️ 清除所有紀錄（保留設定和食物庫）</button>';
+  html += '<button id="btn-reset-all" style="width:100%;padding:11px;border-radius:10px;border:1.5px solid var(--red);background:transparent;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">⚠️ 清除全部資料（完全重置）</button>';
+  html += '</div>';
+  html += '<div style="height:16px"></div>';
+
   document.getElementById('pg-settings').innerHTML = html;
 
   function updateRer() {
@@ -1245,6 +1253,24 @@ function buildSettingsPage() {
       return function() { getCatMeds().splice(mi,1); saveD(); buildSettingsPage(); };
     })(parseInt(delBtns[di].getAttribute('data-mi'))));
   }
+
+  document.getElementById('btn-reset-data').onclick = function() {
+    if (!confirm('確定要清除所有紀錄嗎？\n（貓咪設定、食物庫會保留，只清除日記錄）')) return;
+    D.records = {};
+    D.shared = {};
+    D.meals = {};
+    D.nextId = 10;
+    saveD();
+    alert('已清除所有紀錄！');
+    showPage('cal');
+  };
+  document.getElementById('btn-reset-all').onclick = function() {
+    if (!confirm('⚠️ 確定要清除全部資料（包含貓咪設定、食物庫）？\n此動作無法復原！')) return;
+    if (!confirm('再次確認：真的要清除所有資料嗎？')) return;
+    localStorage.removeItem(SK);
+    localStorage.removeItem(GS_SK);
+    location.reload();
+  };
 }
 
 // ===== REPORT PAGE =====
