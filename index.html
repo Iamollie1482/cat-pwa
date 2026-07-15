@@ -10,6 +10,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>貓咪健康日誌</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --cr:#FAF6EF;--cr2:#F3EDE2;--cr3:#E8DFD0;
@@ -196,19 +198,25 @@ input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
   </div>
 </div>
 
-<!-- GOOGLE SHEETS SYNC MODAL -->
+<!-- SYNC SETTINGS MODAL -->
 <div class="modal-bg" id="modal-fb">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>📊 Google Sheets 同步設定</h3>
-    <p style="font-size:13px;color:var(--t2);margin-bottom:14px;line-height:1.6">貼上 Apps Script 網址後，資料會同步到 Google Sheets，家人也可以即時共用。</p>
-    <label style="font-size:12px;color:var(--t3);display:block;margin-bottom:4px">Apps Script 網址</label>
-    <input class="inp" id="fb-apikey" placeholder="https://script.google.com/macros/s/..." style="margin-bottom:14px">
-    <div style="display:flex;gap:8px">
+    <h3>🔗 同步設定</h3>
+
+    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Firebase（即時雙向同步）</div>
+    <input class="inp" id="fb-apikey" placeholder="apiKey" style="margin-bottom:6px">
+    <input class="inp" id="fb-projectid" placeholder="projectId" style="margin-bottom:6px">
+    <input class="inp" id="fb-appid" placeholder="appId" style="margin-bottom:12px">
+
+    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Google Sheets（單向備份，選填）</div>
+    <input class="inp" id="gs-url" placeholder="Apps Script 網址 https://script.google.com/..." style="margin-bottom:14px">
+
+    <div style="display:flex;gap:8px;margin-bottom:8px">
       <button class="btn btn-g" style="flex:1" id="fb-cancel">取消</button>
-      <button class="btn" style="flex:1" id="fb-save">連線並匯入資料</button>
+      <button class="btn" style="flex:1" id="fb-save">儲存連線</button>
     </div>
-    <button id="fb-disconnect" style="width:100%;margin-top:10px;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷連線（改用本機儲存）</button>
+    <button id="fb-disconnect" style="width:100%;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷所有連線</button>
   </div>
 </div>
 
@@ -255,88 +263,121 @@ function defaultData() {
   };
 }
 
-// ===== GOOGLE SHEETS SYNC =====
+// ===== FIREBASE (主要即時同步) =====
+var FB_SK = 'catFBConfig';
+var db = null;
+var fbUnsubscribe = null;
 var GS_SK = 'catGSUrl';
 var gsUrl = null;
-var syncPending = false;
+var gsPending = null;
 
-function getGSUrl() {
-  try { return localStorage.getItem(GS_SK) || null; } catch(e) { return null; }
+function getFBConfig() {
+  try { var r = localStorage.getItem(FB_SK); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
-function saveGSUrl(url) {
-  try { localStorage.setItem(GS_SK, url); } catch(e) {}
-}
+function saveFBConfig(cfg) { try { localStorage.setItem(FB_SK, JSON.stringify(cfg)); } catch(e) {} }
+function getGSUrl() { try { return localStorage.getItem(GS_SK) || null; } catch(e) { return null; } }
+function saveGSUrl(url) { try { localStorage.setItem(GS_SK, url); } catch(e) {} }
 
 function setSyncStatus(msg, color) {
   var el = document.getElementById('sync-status');
-  if (el) { el.textContent = msg; el.style.color = color || 'var(--t3)'; }
+  if (el) { el.textContent = msg; el.style.color = color||'var(--t3)'; }
 }
 
-function gsPost(payload, callback) {
-  if (!gsUrl) { if (callback) callback(null); return; }
-  setSyncStatus('📊 同步中...', 'var(--t3)');
-  fetch(gsUrl, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.ok) {
-      setSyncStatus('📊 已同步 Sheets', 'var(--grn)');
-    } else {
-      setSyncStatus('⚠️ ' + (data.message || '同步失敗'), 'var(--red)');
-    }
-    if (callback) callback(data);
-  })
-  .catch(function(e) {
-    setSyncStatus('⚠️ 網路錯誤', 'var(--red)');
-    if (callback) callback(null);
-  });
+function initFirebase(cfg) {
+  try {
+    if (firebase.apps.length) firebase.apps.forEach(function(a){try{a.delete();}catch(e){}});
+    var app = firebase.initializeApp({apiKey:cfg.apiKey, projectId:cfg.projectId, appId:cfg.appId});
+    db = firebase.firestore(app);
+    return true;
+  } catch(e) { console.error('FB init error:', e); return false; }
 }
 
-function bulkSyncToSheets(callback) {
-  gsPost({action: 'bulkSync', data: D}, function(res) {
-    if (callback) callback(res && res.ok);
-  });
+function fbSave() {
+  if (!db) return;
+  var payload = JSON.parse(JSON.stringify(D));
+  payload._ts = Date.now();
+  db.collection('catHealth').doc('sharedData').set(payload)
+    .then(function() { setSyncStatus('🔥 已同步', 'var(--grn)'); gsExport(); })
+    .catch(function(e) { setSyncStatus('⚠️ Firebase 失敗', 'var(--red)'); });
 }
 
-function syncDayToSheets(date) {
+function fbLoad(callback) {
+  if (!db) { callback(false); return; }
+  setSyncStatus('🔥 載入中...', 'var(--t3)');
+  db.collection('catHealth').doc('sharedData').get()
+    .then(function(doc) {
+      if (doc.exists) {
+        var data = doc.data(); var ts = data._ts; delete data._ts;
+        D = data; D._ts = ts;
+        try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
+        setSyncStatus('🔥 Firebase 已連線', 'var(--grn)');
+      } else {
+        setSyncStatus('🔥 Firebase 已連線（新）', 'var(--grn)');
+      }
+      callback(true);
+    })
+    .catch(function(e) { setSyncStatus('⚠️ Firebase 連線失敗', 'var(--amb)'); callback(false); });
+}
+
+function fbListen() {
+  if (!db) return;
+  if (fbUnsubscribe) fbUnsubscribe();
+  fbUnsubscribe = db.collection('catHealth').doc('sharedData').onSnapshot(function(doc) {
+    if (!doc.exists || doc.metadata.hasPendingWrites) return;
+    var data = doc.data();
+    if (!data._ts || data._ts <= (D._ts||0)) return;
+    var ts = data._ts; delete data._ts;
+    D = data; D._ts = ts;
+    try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
+    setSyncStatus('🔥 已更新', 'var(--grn)');
+    renderCatBar();
+    if (curPage==='cal'){buildCal();buildDayPanel();}
+    else if (curPage==='calorie') buildCaloriePage();
+    else if (curPage==='foods') buildFoodsPage();
+    else if (curPage==='settings') buildSettingsPage();
+  }, function(e){ console.error('FB snapshot:', e); });
+}
+
+// ===== GOOGLE SHEETS (單向匯出) =====
+function gsPost(payload) {
   if (!gsUrl) return;
-  var cat = catObj();
-  var r = getRec(date);
-  var s = getShared(date);
-  var meals = getMeals(date);
-  var catMedsArr = getCatMeds();
+  fetch(gsUrl, {method:'POST', body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d){if(!d.ok) console.warn('GS:', d.message);})
+    .catch(function(e){console.warn('GS error:', e);});
+}
 
-  // 計算熱量
-  var mealDetails = meals.map(function(m) {
-    var f = foodById(m.foodId);
-    return {time: m.time, name: f ? f.name : '?', portions: m.portions, kcal: f ? f.kcal * m.portions : 0};
-  });
-  var totalKcal = mealDetails.reduce(function(s2, m) { return s2 + m.kcal; }, 0);
-
-  gsPost({
-    action: 'syncDay',
-    date: date,
-    catName: catN(),
-    rec: {
-      weight: r.weight,
-      kcal: Math.round(totalKcal * 10) / 10,
-      dailyTarget: calcDaily(cat),
-      vomit: r.vomit || 0,
-      care: r.care || {},
-      notes: r.notes || ''
-    },
-    shared: s,
-    meals: mealDetails,
-    meds: catMedsArr.map(function(mn) { return {name: mn, given: r.meds && r.meds[mn] ? true : false}; })
-  });
+function gsExport() {
+  if (!gsUrl) return;
+  clearTimeout(gsPending);
+  gsPending = setTimeout(function() {
+    D.cats.forEach(function(cat) {
+      var r = D.records[cat.name+'|'+selDate] || {};
+      var meals = D.meals[cat.name+'|'+selDate] || [];
+      var s = D.shared[selDate] || {};
+      var mealDetails = meals.map(function(m) {
+        var f = foodById(m.foodId);
+        return {time:m.time, name:f?f.name:'?', portions:m.portions, kcal:f?f.kcal*m.portions:0};
+      });
+      gsPost({
+        action:'syncDay', date:selDate, catName:cat.name,
+        rec:{weight:r.weight||'', kcal:Math.round(mealDetails.reduce(function(a,m){return a+m.kcal;},0)*10)/10,
+          dailyTarget:calcDaily(cat), vomit:r.vomit||0, care:r.care||{}, notes:r.notes||''},
+        shared:s, meals:mealDetails,
+        meds:(D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
+      });
+    });
+    gsPost({action:'syncFoods', foods:D.foods});
+  }, 2000);
 }
 
 function openFBModal() {
-  var url = getGSUrl();
-  document.getElementById('fb-apikey').value = url || '';
-  document.getElementById('fb-disconnect').style.display = url ? '' : 'none';
+  var cfg = getFBConfig();
+  document.getElementById('fb-apikey').value = cfg ? cfg.apiKey : '';
+  document.getElementById('fb-projectid').value = cfg ? cfg.projectId : '';
+  document.getElementById('fb-appid').value = cfg ? cfg.appId : '';
+  document.getElementById('gs-url').value = getGSUrl() || '';
+  document.getElementById('fb-disconnect').style.display = (cfg||gsUrl) ? '' : 'none';
   openModal('modal-fb');
 }
 
@@ -347,10 +388,8 @@ function loadD() {
 }
 function saveD() {
   try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-  if (gsUrl) {
-    clearTimeout(syncPending);
-    syncPending = setTimeout(function() { syncDayToSheets(selDate || todayStr); }, 1500);
-  }
+  if (db) { fbSave(); }
+  else if (gsUrl) { gsExport(); }
 }
 
 function catObj() { return D.cats[curCat]; }
@@ -377,8 +416,8 @@ function getCatMeds() {
 }
 function getCatPresets() {
   if (!D.presets) D.presets = {};
-  if (!D.presets[catN()]) D.presets[catN()] = [];
-  return D.presets[catN()];
+  if (!D.presets['shared']) D.presets['shared'] = [];
+  return D.presets['shared'];
 }
 
 function calcRer(w) { return 30 * parseFloat(w) + 70; }
@@ -436,13 +475,18 @@ function init() {
   selDate = todayStr;
   bindEvents();
   gsUrl = getGSUrl();
-  if (gsUrl) {
-    setSyncStatus('📊 已連線 Sheets', 'var(--grn)');
+  var cfg = getFBConfig();
+  if (cfg && cfg.apiKey && cfg.projectId && cfg.appId) {
+    if (initFirebase(cfg)) {
+      fbLoad(function() { renderCatBar(); showPage('cal'); fbListen(); });
+    } else {
+      setSyncStatus('⚠️ Firebase 設定有誤', 'var(--red)');
+      renderCatBar(); showPage('cal');
+    }
   } else {
-    setSyncStatus('未連線 Sheets', 'var(--t3)');
+    setSyncStatus(gsUrl ? '📊 Sheets 備份中' : '未連線', 'var(--t3)');
+    renderCatBar(); showPage('cal');
   }
-  renderCatBar();
-  showPage('cal');
 }
 
 // ===== EVENTS =====
@@ -459,52 +503,38 @@ function bindEvents() {
   document.getElementById('modal-fb').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-fb'); });
   document.getElementById('fb-cancel').onclick = function() { closeModal('modal-fb'); };
   document.getElementById('fb-save').onclick = function() {
-    var url = document.getElementById('fb-apikey').value.trim();
-    if (!url || url.indexOf('script.google.com') === -1) {
-      alert('請貼上正確的 Apps Script 網址（以 https://script.google.com 開頭）');
-      return;
-    }
-    var btn = document.getElementById('fb-save');
-    btn.textContent = '連線中...'; btn.disabled = true;
-    // 先測試連線
-    fetch(url)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) {
-        saveGSUrl(url); gsUrl = url;
+    var apiKey = document.getElementById('fb-apikey').value.trim();
+    var projectId = document.getElementById('fb-projectid').value.trim();
+    var appId = document.getElementById('fb-appid').value.trim();
+    var gsUrlVal = document.getElementById('gs-url').value.trim();
+    // Save GS URL
+    if (gsUrlVal) { saveGSUrl(gsUrlVal); gsUrl = gsUrlVal; }
+    else { localStorage.removeItem(GS_SK); gsUrl = null; }
+    // Save Firebase config
+    if (apiKey && projectId && appId) {
+      var cfg = {apiKey:apiKey, projectId:projectId, appId:appId};
+      saveFBConfig(cfg);
+      if (initFirebase(cfg)) {
         closeModal('modal-fb');
-        setSyncStatus('📊 連線成功，匯入資料中...', 'var(--grn)');
-        // 初始化分頁
-        var catNames = D.cats.map(function(c) { return c.name; });
-        gsPost({action: 'init', catNames: catNames}, function() {
-          // 匯入所有現有資料
-          bulkSyncToSheets(function(ok) {
-            btn.textContent = '連線並匯入資料'; btn.disabled = false;
-            if (ok) {
-              setSyncStatus('📊 已同步 Sheets', 'var(--grn)');
-              buildSettingsPage();
-              alert('連線成功！現有資料已全部匯入 Google Sheets。');
-            } else {
-              setSyncStatus('⚠️ 匯入失敗，請重試', 'var(--red)');
-            }
-          });
+        setSyncStatus('🔥 連線中...','var(--t3)');
+        fbLoad(function() {
+          renderCatBar(); showPage(curPage); fbListen();
+          fbSave(); // 上傳現有資料
         });
-      } else {
-        throw new Error('API 回應錯誤');
-      }
-    })
-    .catch(function() {
-      btn.textContent = '連線並匯入資料'; btn.disabled = false;
-      alert('連線失敗，請確認網址是否正確，且 Apps Script 已部署為「所有人可存取」。');
-    });
+      } else { alert('Firebase 設定有誤，請確認'); }
+    } else {
+      closeModal('modal-fb');
+      setSyncStatus(gsUrl?'📊 Sheets 備份中':'未連線','var(--t3)');
+      buildSettingsPage();
+    }
   };
   document.getElementById('fb-disconnect').onclick = function() {
-    if (!confirm('確定中斷 Sheets 連線？資料仍保留在本機。')) return;
-    localStorage.removeItem(GS_SK);
-    gsUrl = null;
-    setSyncStatus('未連線 Sheets', 'var(--t3)');
-    closeModal('modal-fb');
-    buildSettingsPage();
+    if (!confirm('確定中斷所有連線？資料仍保留在本機。')) return;
+    localStorage.removeItem(FB_SK); localStorage.removeItem(GS_SK);
+    db = null; gsUrl = null;
+    if (fbUnsubscribe) { fbUnsubscribe(); fbUnsubscribe = null; }
+    setSyncStatus('未連線','var(--t3)');
+    closeModal('modal-fb'); buildSettingsPage();
   };
   document.getElementById('nav-cal').onclick = function() { showPage('cal'); };
   document.getElementById('nav-calorie').onclick = function() { showPage('calorie'); };
@@ -1132,6 +1162,7 @@ function buildCaloriePage() {
   html += '<div class="row"><span class="lbl">份數</span><input class="inp-sm" type="number" id="m-portions" value="1" min="0.5" step="0.5" style="width:70px"><span class="sub" id="m-hint" style="flex:1;text-align:right"></span></div>';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span class="sub" id="m-prev" style="flex:1"></span>';
   html += '<button class="btn btn-g" id="btn-save-preset" style="font-size:12px;padding:7px 10px">存為常用</button>';
+  html += '<button class="btn btn-g" id="btn-add-meal-both" style="font-size:12px;padding:7px 10px" title="同時新增到兩隻貓">同步新增</button>';
   html += '<button class="btn" id="btn-add-meal">新增</button></div></div>';
 
   // 常用餐點（在手動新增下方）
@@ -1143,7 +1174,8 @@ function buildCaloriePage() {
       html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">'+pr2.time+' · '+pf2.name+' ×'+pr2.portions+'</div>';
       html += '<div class="sub">'+(pf2.grams*pr2.portions).toFixed(0)+'g · '+(pf2.kcal*pr2.portions).toFixed(1)+' kcal</div></div>';
       html += '<button class="btn-del preset-del2" data-pi="'+pi+'" style="margin-right:4px" title="刪除常用">✕</button>';
-      html += '<button class="btn cal2-preset-add" data-pi="'+pi+'" style="padding:7px 14px;font-size:13px">＋新增</button>';
+      html += '<button class="btn btn-g cal2-preset-add-both" data-pi="'+pi+'" style="padding:6px 10px;font-size:12px">同步</button>';
+      html += '<button class="btn cal2-preset-add" data-pi="'+pi+'" style="padding:7px 12px;font-size:13px">＋新增</button>';
       html += '</div>';
     }
   }
@@ -1173,7 +1205,7 @@ function buildCaloriePage() {
     })(parseInt(cal2dels[cd].getAttribute('data-mid'))));
   }
 
-  // 常用餐點新增
+  // 常用餐點新增（單貓）
   var cal2adds=pg.querySelectorAll('.cal2-preset-add');
   for(var pa=0;pa<cal2adds.length;pa++){
     cal2adds[pa].addEventListener('click',(function(pi2){
@@ -1186,6 +1218,22 @@ function buildCaloriePage() {
         saveD();renderCal_light();buildCaloriePage();
       };
     })(parseInt(cal2adds[pa].getAttribute('data-pi'))));
+  }
+  // 常用餐點同步新增（所有貓）
+  var cal2addsAll=pg.querySelectorAll('.cal2-preset-add-both');
+  for(var pab=0;pab<cal2addsAll.length;pab++){
+    cal2addsAll[pab].addEventListener('click',(function(pi5){
+      return function(){
+        var pr=getCatPresets()[pi5]; if(!pr)return;
+        D.cats.forEach(function(cat){
+          var k=cat.name+'|'+selDate;
+          if(!D.meals[k])D.meals[k]=[];
+          D.meals[k].push({id:D.nextId++,foodId:pr.foodId,portions:pr.portions,time:pr.time});
+          D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
+        });
+        saveD();renderCal_light();buildCaloriePage();
+      };
+    })(parseInt(cal2addsAll[pab].getAttribute('data-pi'))));
   }
 
   // 刪除常用
@@ -1217,6 +1265,19 @@ function buildCaloriePage() {
     if(!D.meals[k])D.meals[k]=[];
     D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
     D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
+    saveD();renderCal_light();buildCaloriePage();
+  };
+  // 同步新增：新增到所有貓
+  document.getElementById('btn-add-meal-both').onclick=function(){
+    var fid=parseInt(document.getElementById('m-food').value);
+    var portions=parseFloat(document.getElementById('m-portions').value)||1;
+    var time=document.getElementById('m-time').value||nowTime();
+    D.cats.forEach(function(cat){
+      var k=cat.name+'|'+selDate;
+      if(!D.meals[k])D.meals[k]=[];
+      D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
+      D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
+    });
     saveD();renderCal_light();buildCaloriePage();
   };
   document.getElementById('btn-save-preset').onclick=function(){
@@ -1304,8 +1365,9 @@ function buildSettingsPage() {
   ];
 
   var url = getGSUrl();
-  var syncLabel = url ? '📊 Google Sheets：已連線' : '📊 Google Sheets：未設定';
-  var syncColor = url ? 'var(--grn)' : 'var(--t3)';
+  var fbCfg = getFBConfig();
+  var syncLabel = fbCfg ? '🔥 Firebase：已設定' + (url ? ' + 📊 Sheets 備份' : '') : (url ? '📊 Sheets 備份：已設定' : '🔗 同步：未設定');
+  var syncColor = fbCfg ? 'var(--grn)' : (url ? 'var(--amb)' : 'var(--t3)');
   var html = '<div class="sec" style="margin-top:4px">雲端同步</div>';
   html += '<div class="card" style="display:flex;align-items:center;gap:10px;cursor:pointer" id="btn-open-fb">';
   html += '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:' + syncColor + '">' + syncLabel + '</div>';
