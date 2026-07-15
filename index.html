@@ -249,6 +249,7 @@ function defaultData() {
       {id:3,name:'餐包(綠)',grams:60,kcal:48.6},
       {id:4,name:'乾飼料',grams:30,kcal:110}
     ],
+    presets: {},
     meds: {},
     nextId: 10
   };
@@ -373,6 +374,11 @@ function getMeals(date) {
 function getCatMeds() {
   if (!D.meds[catN()]) D.meds[catN()] = [];
   return D.meds[catN()];
+}
+function getCatPresets() {
+  if (!D.presets) D.presets = {};
+  if (!D.presets[catN()]) D.presets[catN()] = [];
+  return D.presets[catN()];
 }
 
 function calcRer(w) { return 30 * parseFloat(w) + 70; }
@@ -718,18 +724,19 @@ function buildDayPanel() {
   html += '<span style="font-size:13px;font-weight:500;color:var(--t1)">飲水 <span class="sec-note" style="font-size:11px">全貓共用</span></span>';
   html += '<span style="font-size:14px;font-weight:700;color:var(--tel)">' + (wTotal > 0 ? wTotal + ' ml' : '—') + '</span>';
   html += '</div>';
-  // 已記錄的換水
+  // 已記錄的換水 — 單行格式
   for (var wli = 0; wli < wLogs.length; wli++) {
-    html += '<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;font-size:12px">';
-    html += '<span style="color:var(--t3);width:28px;flex-shrink:0">第'+(wli+1)+'次</span>';
-    html += '<span style="flex:1;color:var(--t2)">加'+wLogs[wli].added+'−剩'+wLogs[wli].left+' = <b style="color:var(--tel)">'+wLogs[wli].drunk+' ml</b></span>';
-    html += '<button class="btn-del wlog-del" data-wi="'+wli+'" style="width:20px;height:20px;font-size:11px;flex-shrink:0">✕</button>';
+    html += '<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px">';
+    html += '<span style="color:var(--t3);flex-shrink:0;font-weight:500">第'+(wli+1)+'次</span>';
+    html += '<span style="color:var(--t2);flex:1;white-space:nowrap">加'+wLogs[wli].added+'−剩'+wLogs[wli].left+' = <b style="color:var(--tel)">'+wLogs[wli].drunk+' ml</b></span>';
+    html += '<button class="btn-del wlog-del" data-wi="'+wli+'" style="width:18px;height:18px;font-size:10px;flex-shrink:0">✕</button>';
     html += '</div>';
   }
   // 新增換水輸入
-  html += '<div style="display:flex;gap:5px;align-items:center;margin-top:' + (wLogs.length > 0 ? '4px' : '0') + '">';
-  html += '<input class="inp-sm" type="number" id="w-added" placeholder="加水 ml" min="0" style="width:80px;font-size:12px;padding:6px 8px">';
-  html += '<input class="inp-sm" type="number" id="w-left" placeholder="剩餘 ml" min="0" style="width:80px;font-size:12px;padding:6px 8px">';
+  var wDef = D.waterDefault || 320;
+  html += '<div style="display:flex;gap:5px;align-items:center;margin-top:' + (wLogs.length > 0 ? '6px' : '0') + '">';
+  html += '<input class="inp-sm" type="number" id="w-added" placeholder="加水" min="0" value="' + wDef + '" style="width:76px;font-size:12px;padding:6px 8px">';
+  html += '<input class="inp-sm" type="number" id="w-left" placeholder="剩餘" min="0" style="width:76px;font-size:12px;padding:6px 8px">';
   html += '<span class="sub" id="w-calc" style="flex:1;font-size:11px;white-space:nowrap"></span>';
   html += '<button class="btn" id="btn-add-water" style="background:var(--tel);padding:6px 12px;font-size:12px;flex-shrink:0">記錄</button>';
   html += '</div>';
@@ -737,7 +744,13 @@ function buildDayPanel() {
   html += '</div>'; // end rec-row
   html += '</div>'; // end card
 
-  // 熱量
+  // 熱量摘要（日曆頁只顯示摘要，不含新增功能）
+  var daily = calcDaily(catObj());
+  var ate = calcAte(selDate);
+  var pct = Math.min(ate/daily*100, 100);
+  var over = ate > daily;
+  var meals = getMeals(selDate);
+
   html += '<div class="sec">今日熱量 — ' + catN() + '</div>';
   html += '<div class="card2">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">';
@@ -754,11 +767,12 @@ function buildDayPanel() {
       html += '<div class="meal-row"><span style="font-size:12px;color:var(--t3);width:36px;flex-shrink:0">' + meals[mi].time + '</span>';
       html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + mf.name + ' ×' + meals[mi].portions + '</div>';
       html += '<div class="sub">' + (mf.grams*meals[mi].portions).toFixed(0) + 'g</div></div>';
-      html += '<span style="font-size:12px;color:var(--t2)">' + (mf.kcal*meals[mi].portions).toFixed(1) + ' kcal</span></div>';
+      html += '<span style="font-size:12px;color:var(--t2)">' + (mf.kcal*meals[mi].portions).toFixed(1) + ' kcal</span>';
+      html += '<button class="btn-del day-meal-del" data-mid="' + meals[mi].id + '">✕</button></div>';
     }
     html += '</div>';
   } else {
-    html += '<div class="empty" style="padding:10px 0 0">點「🍽️ 熱量」新增用餐紀錄</div>';
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--t3)">前往「🍽️ 熱量」分頁新增用餐</div>';
   }
   html += '</div>';
 
@@ -870,6 +884,18 @@ function buildDayPanel() {
     })(parseInt(medChks[mci].getAttribute('data-medi'))));
   }
 
+  // 日曆頁用餐刪除
+  var dayMealDels = dp.querySelectorAll('.day-meal-del');
+  for (var dmd = 0; dmd < dayMealDels.length; dmd++) {
+    dayMealDels[dmd].addEventListener('click', (function(mid) {
+      return function() {
+        var k = catN() + '|' + selDate;
+        D.meals[k] = (D.meals[k]||[]).filter(function(m) { return m.id !== mid; });
+        saveD(); renderCal_light(); buildDayPanel();
+      };
+    })(parseInt(dayMealDels[dmd].getAttribute('data-mid'))));
+  }
+
   buildWaterCard();
 }
 
@@ -884,24 +910,27 @@ function buildWaterCard() {
 
   var html = '';
   if (logs.length > 0) {
-    html += '<div style="font-size:22px;font-weight:700;color:var(--tel);margin-bottom:10px">' + total + ' <span style="font-size:13px;font-weight:400;color:var(--t3)">ml 今日總飲水</span></div>';
+    html += '<div style="font-size:20px;font-weight:700;color:var(--tel);margin-bottom:8px">' + total + ' <span style="font-size:13px;font-weight:400;color:var(--t3)">ml 今日總飲水</span></div>';
     for (var i2 = 0; i2 < logs.length; i2++) {
-      html += '<div class="water-log-row">';
-      html += '<span style="font-size:12px;color:var(--t3);width:32px;flex-shrink:0">第' + (i2+1) + '次</span>';
-      html += '<div style="flex:1;font-size:12px;color:var(--t2)">加水 ' + logs[i2].added + 'ml &minus; 剩餘 ' + logs[i2].left + 'ml</div>';
-      html += '<span style="font-size:13px;font-weight:600;color:var(--tel)">' + logs[i2].drunk + ' ml</span>';
-      html += '<button class="btn-del wlog-del" data-wi="' + i2 + '">✕</button></div>';
+      html += '<div style="margin-bottom:6px">';
+      html += '<div style="display:flex;align-items:center;gap:6px;font-size:13px">';
+      html += '<span style="color:var(--t3);width:32px;flex-shrink:0;font-weight:500">第' + (i2+1) + '次</span>';
+      html += '<span style="font-weight:600;color:var(--tel)">' + logs[i2].drunk + ' ml</span>';
+      html += '<button class="btn-del wlog-del" data-wi="' + i2 + '" style="margin-left:auto">✕</button></div>';
+      html += '<div style="margin-left:38px;font-size:11px;color:var(--t3)">加 ' + logs[i2].added + 'ml − 剩 ' + logs[i2].left + 'ml</div>';
+      html += '</div>';
     }
-    html += '<div style="height:6px"></div>';
+    html += '<div style="height:4px"></div>';
   } else {
     html += '<div class="empty" style="padding:10px 0">尚未記錄今日飲水</div>';
   }
 
+  var wDef2 = D.waterDefault || 320;
   html += '<div style="margin-top:10px;background:var(--cr2);border-radius:11px;padding:12px">';
   html += '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;font-weight:600">新增換水紀錄</div>';
   html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">';
   html += '<span style="font-size:12px;color:var(--t2);width:52px;flex-shrink:0">加水量</span>';
-  html += '<input class="inp-sm" type="number" id="w-added" placeholder="ml" min="0" style="width:80px">';
+  html += '<input class="inp-sm" type="number" id="w-added" value="' + wDef2 + '" min="0" style="width:80px">';
   html += '<span style="font-size:12px;color:var(--t3)">ml</span></div>';
   html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">';
   html += '<span style="font-size:12px;color:var(--t2);width:52px;flex-shrink:0">剩餘量</span>';
@@ -1028,77 +1057,184 @@ function confirmCare() {
 
 // ===== CALORIE PAGE =====
 function buildCaloriePage() {
-  var daily = calcDaily(catObj()), ate = calcAte(todayStr);
-  var pct = Math.min(ate/daily*100, 100), over = ate > daily;
-  var meals = getMeals(todayStr);
+  var pg = document.getElementById('pg-calorie');
+  var presets = getCatPresets();
 
-  var html = '<div class="sec" style="margin-top:4px">今日熱量 — ' + catN() + '</div>';
-  html += '<div class="card2">';
+  // 月曆（簡版，同日曆頁）
+  var first = new Date(viewY, viewM, 1).getDay();
+  var dim = new Date(viewY, viewM+1, 0).getDate();
+  var prev = new Date(viewY, viewM, 0).getDate();
+  var cells = '';
+  function mkCal2(d, ds, other) {
+    var isTod = ds===todayStr, isSel = ds===selDate;
+    var cls = 'cell' + (other?' other':'') + (isSel?' sel':isTod?' tod':'');
+    var dots = getDots(ds);
+    var dotsHtml = '';
+    for (var di = 0; di < Math.min(dots.length,5); di++) dotsHtml += '<span class="cdot" style="background:'+DOT_COLOR[dots[di]]+'"></span>';
+    return '<div class="' + cls + '" data-ds2="' + ds + '"><span class="cnum">' + d + '</span><div class="cdots">' + dotsHtml + '</div></div>';
+  }
+  for (var i = 0; i < first; i++) { var d2=prev-first+1+i; cells+=mkCal2(d2,fmtDate(new Date(viewY,viewM-1,d2)),true); }
+  for (var d3=1;d3<=dim;d3++) cells+=mkCal2(d3,fmtDate(new Date(viewY,viewM,d3)),false);
+  var rem=(first+dim)%7===0?0:7-(first+dim)%7;
+  for (var i2=1;i2<=rem;i2++) { cells+=mkCal2(i2,fmtDate(new Date(viewY,viewM+1,i2)),true); }
+  var dayLabels2=['日','一','二','三','四','五','六'];
+  var hdr2='';
+  for(var li=0;li<7;li++) hdr2+='<div class="cal-dl" style="'+(li===0?'color:var(--rose)':li===6?'color:var(--lav)':'')+'">' + dayLabels2[li]+'</div>';
+
+  var daily = calcDaily(catObj()), ate = calcAte(selDate);
+  var pct = Math.min(ate/daily*100, 100), over = ate > daily;
+  var meals = getMeals(selDate);
+  var d4 = new Date(selDate+'T00:00:00');
+  var wk2=['日','一','二','三','四','五','六'];
+  var dateLbl = (d4.getMonth()+1)+'月'+d4.getDate()+'日（'+wk2[d4.getDay()]+'）';
+
+  var html = '';
+  // 月曆導航
+  html += '<div class="mnav" style="margin-top:4px">';
+  html += '<button class="mnav-btn" id="cal2-prev">‹</button>';
+  html += '<span style="font-size:15px;font-weight:600">' + viewY + ' 年 ' + MN[viewM] + '</span>';
+  html += '<button class="mnav-btn" id="cal2-next">›</button></div>';
+  html += '<div class="cal-wrap"><div class="cal-hdr">' + hdr2 + '</div>';
+  html += '<div class="cal-grid" id="cal-grid2">' + cells + '</div></div>';
+
+  // 選取日期的熱量
+  html += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">';
+  html += '<span style="font-size:16px;font-weight:700">' + dateLbl + '</span>';
+  if (selDate===todayStr) html += '<span class="sub">今天</span>';
+  html += '</div>';
+  html += '<div class="card2" style="margin-bottom:10px">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">';
   html += '<span class="big">' + ate + '</span><span style="font-size:14px;color:var(--t2)">/ ' + daily + ' kcal</span>';
-  html += '<span class="tag ' + (over?'tag-r':pct>85?'tag-a':'tag-g') + '">' + (over?'超標 '+(ate-daily).toFixed(1)+'kcal':pct===0?'未開始':'正常') + '</span></div>';
-  html += '<div class="prog-bar"><div class="prog-fill' + (over?' over':'') + '" style="width:' + pct + '%"></div></div>';
-  html += '<div style="display:flex;justify-content:space-between"><span class="sub">已攝取 ' + ate + ' kcal</span>';
-  html += '<span class="sub">' + (over?'超出':'剩餘') + ' ' + Math.abs(daily-ate).toFixed(1) + ' kcal</span></div></div>';
-
-  html += '<div class="sec">新增用餐</div><div class="card">';
-  html += '<div class="row"><span class="lbl">時間</span><input class="inp-sm" type="time" id="m-time" value="' + nowTime() + '" step="60" style="width:105px"></div>';
-  html += '<div class="row"><span class="lbl">食物</span><select class="sel" id="m-food">';
-  for (var fi = 0; fi < D.foods.length; fi++) {
-    html += '<option value="' + D.foods[fi].id + '">' + D.foods[fi].name + '</option>';
-  }
-  html += '</select></div>';
-  html += '<div class="row"><span class="lbl">份數</span><input class="inp-sm" type="number" id="m-portions" value="1" min="0.5" step="0.5" style="width:70px"><span class="sub" id="m-hint" style="flex:1;text-align:right"></span></div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span class="sub" id="m-prev" style="flex:1"></span><button class="btn" id="btn-add-meal">新增</button></div></div>';
-
-  html += '<div class="sec">今日用餐紀錄</div><div class="card" id="meal-list">';
+  html += '<span class="tag '+(over?'tag-r':pct>85?'tag-a':'tag-g')+'">'+(over?'超標':pct===0?'未開始':'正常')+'</span></div>';
+  html += '<div class="prog-bar"><div class="prog-fill'+(over?' over':'')+'" style="width:'+pct+'%"></div></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span class="sub">已攝取 '+ate+' kcal</span>';
+  html += '<span class="sub">'+(over?'超出':'剩餘')+' '+Math.abs(daily-ate).toFixed(1)+' kcal</span></div>';
   if (meals.length > 0) {
-    for (var mi = 0; mi < meals.length; mi++) {
-      var mf = foodById(meals[mi].foodId);
-      if (!mf) continue;
-      html += '<div class="meal-row"><span style="font-size:12px;color:var(--t3);width:36px;flex-shrink:0">' + meals[mi].time + '</span>';
-      html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + mf.name + '</div>';
-      html += '<div class="sub">' + meals[mi].portions + '份 · ' + (mf.grams*meals[mi].portions).toFixed(0) + 'g</div></div>';
-      html += '<span style="font-size:12px;color:var(--t2);text-align:right">' + (mf.kcal*meals[mi].portions).toFixed(1) + '<br><span style="font-size:10px;color:var(--t3)">kcal</span></span>';
-      html += '<button class="btn-del meal-del" data-mid="' + meals[mi].id + '">✕</button></div>';
+    html += '<div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">';
+    for (var mi2 = 0; mi2 < meals.length; mi2++) {
+      var mf2 = foodById(meals[mi2].foodId); if (!mf2) continue;
+      html += '<div class="meal-row"><span style="font-size:12px;color:var(--t3);width:36px;flex-shrink:0">'+meals[mi2].time+'</span>';
+      html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">'+mf2.name+' ×'+meals[mi2].portions+'</div>';
+      html += '<div class="sub">'+(mf2.grams*meals[mi2].portions).toFixed(0)+'g</div></div>';
+      html += '<span style="font-size:12px;color:var(--t2)">'+(mf2.kcal*meals[mi2].portions).toFixed(1)+' kcal</span>';
+      html += '<button class="btn-del cal2-meal-del" data-mid="'+meals[mi2].id+'">✕</button></div>';
     }
-  } else {
-    html += '<div class="empty">尚無紀錄</div>';
+    html += '</div>';
   }
   html += '</div>';
 
-  document.getElementById('pg-calorie').innerHTML = html;
+  // 手動新增（先出現）
+  html += '<div class="sec">新增用餐</div><div class="card">';
+  html += '<div class="row"><span class="lbl">時間</span><input class="inp-sm" type="time" id="m-time" value="'+nowTime()+'" step="60" style="width:105px"></div>';
+  html += '<div class="row"><span class="lbl">食物</span><select class="sel" id="m-food">';
+  for (var fi2 = 0; fi2 < D.foods.length; fi2++) html += '<option value="'+D.foods[fi2].id+'">'+D.foods[fi2].name+'</option>';
+  html += '</select></div>';
+  html += '<div class="row"><span class="lbl">份數</span><input class="inp-sm" type="number" id="m-portions" value="1" min="0.5" step="0.5" style="width:70px"><span class="sub" id="m-hint" style="flex:1;text-align:right"></span></div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><span class="sub" id="m-prev" style="flex:1"></span>';
+  html += '<button class="btn btn-g" id="btn-save-preset" style="font-size:12px;padding:7px 10px">存為常用</button>';
+  html += '<button class="btn" id="btn-add-meal">新增</button></div></div>';
 
-  function updatePrev() {
-    var fid = parseInt(document.getElementById('m-food').value);
-    var portions = parseFloat(document.getElementById('m-portions').value) || 1;
-    var f = foodById(fid);
-    if (!f) return;
-    document.getElementById('m-hint').textContent = '每份 ' + f.grams + 'g';
-    document.getElementById('m-prev').textContent = '→ ' + (f.grams*portions).toFixed(0) + 'g，' + (f.kcal*portions).toFixed(1) + ' kcal';
+  // 常用餐點（在手動新增下方）
+  if (presets.length > 0) {
+    html += '<div class="sec">常用餐點<span class="sec-note">點擊直接新增到 '+dateLbl+'</span></div>';
+    for (var pi = 0; pi < presets.length; pi++) {
+      var pr2 = presets[pi]; var pf2 = foodById(pr2.foodId); if (!pf2) continue;
+      html += '<div style="display:flex;align-items:center;gap:8px;background:var(--cr);border:1px solid var(--bd);border-radius:var(--r);padding:9px 13px;margin-bottom:6px">';
+      html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">'+pr2.time+' · '+pf2.name+' ×'+pr2.portions+'</div>';
+      html += '<div class="sub">'+(pf2.grams*pr2.portions).toFixed(0)+'g · '+(pf2.kcal*pr2.portions).toFixed(1)+' kcal</div></div>';
+      html += '<button class="btn-del preset-del2" data-pi="'+pi+'" style="margin-right:4px" title="刪除常用">✕</button>';
+      html += '<button class="btn cal2-preset-add" data-pi="'+pi+'" style="padding:7px 14px;font-size:13px">＋新增</button>';
+      html += '</div>';
+    }
   }
-  document.getElementById('m-food').onchange = updatePrev;
-  document.getElementById('m-portions').oninput = updatePrev;
-  document.getElementById('btn-add-meal').onclick = function() {
-    var fid = parseInt(document.getElementById('m-food').value);
-    var portions = parseFloat(document.getElementById('m-portions').value) || 1;
-    var time = document.getElementById('m-time').value || nowTime();
-    var k = catN() + '|' + todayStr;
-    if (!D.meals[k]) D.meals[k] = [];
-    D.meals[k].push({id:D.nextId++, foodId:fid, portions:portions, time:time});
-    D.meals[k].sort(function(a,b) { return a.time > b.time ? 1 : -1; });
-    saveD(); buildCaloriePage();
-  };
-  var delBtns = document.querySelectorAll('.meal-del');
-  for (var di = 0; di < delBtns.length; di++) {
-    delBtns[di].addEventListener('click', (function(mid) {
-      return function() {
-        var k = catN() + '|' + todayStr;
-        D.meals[k] = (D.meals[k]||[]).filter(function(m) { return m.id !== mid; });
-        saveD(); buildCaloriePage();
+
+  html += '<div style="height:16px"></div>';
+  pg.innerHTML = html;
+
+  // 月曆點擊
+  var cellEls2 = document.getElementById('cal-grid2').querySelectorAll('.cell');
+  for (var ci2=0;ci2<cellEls2.length;ci2++) {
+    cellEls2[ci2].addEventListener('click',(function(ds){
+      return function(){selDate=ds;buildCaloriePage();document.getElementById('scroll').scrollTop=290;};
+    })(cellEls2[ci2].getAttribute('data-ds2')));
+  }
+  document.getElementById('cal2-prev').onclick=function(){changeMonth(-1);buildCaloriePage();};
+  document.getElementById('cal2-next').onclick=function(){changeMonth(1);buildCaloriePage();};
+
+  // 刪除當日用餐
+  var cal2dels=pg.querySelectorAll('.cal2-meal-del');
+  for(var cd=0;cd<cal2dels.length;cd++){
+    cal2dels[cd].addEventListener('click',(function(mid){
+      return function(){
+        var k=catN()+'|'+selDate;
+        D.meals[k]=(D.meals[k]||[]).filter(function(m){return m.id!==mid;});
+        saveD();renderCal_light();buildCaloriePage();
       };
-    })(parseInt(delBtns[di].getAttribute('data-mid'))));
+    })(parseInt(cal2dels[cd].getAttribute('data-mid'))));
   }
+
+  // 常用餐點新增
+  var cal2adds=pg.querySelectorAll('.cal2-preset-add');
+  for(var pa=0;pa<cal2adds.length;pa++){
+    cal2adds[pa].addEventListener('click',(function(pi2){
+      return function(){
+        var pr=getCatPresets()[pi2]; if(!pr)return;
+        var k=catN()+'|'+selDate;
+        if(!D.meals[k])D.meals[k]=[];
+        D.meals[k].push({id:D.nextId++,foodId:pr.foodId,portions:pr.portions,time:pr.time});
+        D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
+        saveD();renderCal_light();buildCaloriePage();
+      };
+    })(parseInt(cal2adds[pa].getAttribute('data-pi'))));
+  }
+
+  // 刪除常用
+  var pdels=pg.querySelectorAll('.preset-del2');
+  for(var pd=0;pd<pdels.length;pd++){
+    pdels[pd].addEventListener('click',(function(pi3){
+      return function(){
+        if(!confirm('刪除此常用餐點？'))return;
+        getCatPresets().splice(pi3,1);saveD();buildCaloriePage();
+      };
+    })(parseInt(pdels[pd].getAttribute('data-pi'))));
+  }
+
+  // 手動新增
+  function updatePrev() {
+    var fid=parseInt(document.getElementById('m-food').value);
+    var portions=parseFloat(document.getElementById('m-portions').value)||1;
+    var f=foodById(fid); if(!f)return;
+    document.getElementById('m-hint').textContent='每份 '+f.grams+'g';
+    document.getElementById('m-prev').textContent='→ '+(f.grams*portions).toFixed(0)+'g，'+(f.kcal*portions).toFixed(1)+' kcal';
+  }
+  document.getElementById('m-food').onchange=updatePrev;
+  document.getElementById('m-portions').oninput=updatePrev;
+  document.getElementById('btn-add-meal').onclick=function(){
+    var fid=parseInt(document.getElementById('m-food').value);
+    var portions=parseFloat(document.getElementById('m-portions').value)||1;
+    var time=document.getElementById('m-time').value||nowTime();
+    var k=catN()+'|'+selDate;
+    if(!D.meals[k])D.meals[k]=[];
+    D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
+    D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
+    saveD();renderCal_light();buildCaloriePage();
+  };
+  document.getElementById('btn-save-preset').onclick=function(){
+    var fid=parseInt(document.getElementById('m-food').value);
+    var portions=parseFloat(document.getElementById('m-portions').value)||1;
+    var time=document.getElementById('m-time').value||nowTime();
+    var presets2=getCatPresets();
+    var dup=false;
+    for(var pi4=0;pi4<presets2.length;pi4++){if(presets2[pi4].foodId===fid&&presets2[pi4].time===time){dup=true;break;}}
+    if(dup){alert('此時間點的食物已在常用餐點中');return;}
+    presets2.push({foodId:fid,portions:portions,time:time});
+    presets2.sort(function(a,b){return a.time>b.time?1:-1;});
+    saveD();
+    var btn=document.getElementById('btn-save-preset');
+    btn.textContent='✓ 已儲存';btn.style.background='var(--grn)';
+    setTimeout(function(){btn.textContent='存為常用';btn.style.background='';},1500);
+    buildCaloriePage();
+  };
   updatePrev();
 }
 
@@ -1193,6 +1329,14 @@ function buildSettingsPage() {
   }
   html += '</div>';
 
+  html += '<div class="sec">飲水預設值</div>';
+  html += '<div class="card"><div class="row">';
+  html += '<span class="lbl">加水預設量</span>';
+  html += '<input class="inp-sm" type="number" id="s-water-default" value="' + (D.waterDefault||320) + '" min="0" style="width:80px">';
+  html += '<span class="lbl">ml</span>';
+  html += '<button class="btn" style="margin-left:auto" id="btn-save-water-default">儲存</button>';
+  html += '</div></div>';
+
   html += '<div class="sec">藥物管理</div><div class="card">';
   if (meds.length > 0) {
     for (var mi = 0; mi < meds.length; mi++) {
@@ -1228,6 +1372,16 @@ function buildSettingsPage() {
   }
 
   document.getElementById('btn-open-fb').onclick = openFBModal;
+  document.getElementById('btn-save-water-default').onclick = function() {
+    var v = parseFloat(document.getElementById('s-water-default').value);
+    if (!isNaN(v) && v >= 0) {
+      D.waterDefault = v;
+      saveD();
+      var btn = document.getElementById('btn-save-water-default');
+      btn.textContent = '✓ 已儲存'; btn.style.background = 'var(--grn)';
+      setTimeout(function(){ btn.textContent = '儲存'; btn.style.background = ''; }, 1500);
+    }
+  };
   document.getElementById('s-weight').addEventListener('input', updateRer);
   document.getElementById('s-status').addEventListener('change', updateRer);
   document.getElementById('btn-save-cat').onclick = function() {
