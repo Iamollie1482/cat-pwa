@@ -202,26 +202,21 @@ input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
 <div class="modal-bg" id="modal-fb">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>🏠 家庭房間碼</h3>
-    <p style="font-size:13px;color:var(--t2);margin-bottom:16px;line-height:1.7">輸入同一個房間碼，就能與家人即時同步資料。<br>沒有房間碼的人各自獨立，不會互相影響。</p>
+    <h3>🔗 同步設定</h3>
 
-    <label style="font-size:12px;color:var(--t3);font-weight:600;display:block;margin-bottom:6px">房間碼</label>
-    <div style="display:flex;gap:6px;margin-bottom:14px">
-      <input class="inp" id="room-code-input" placeholder="例：cat-ab12-cd34" style="flex:1;font-family:monospace;font-size:15px">
-      <button class="btn btn-g" id="btn-gen-room" style="white-space:nowrap;padding:9px 12px">隨機產生</button>
-    </div>
-    <div id="room-hint" style="font-size:12px;color:var(--t3);margin-bottom:14px;line-height:1.6">
-      ① 自己點「隨機產生」建立新房間<br>② 把房間碼傳給家人<br>③ 家人輸入同一個碼後點「加入房間」
-    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Firebase（即時雙向同步）</div>
+    <input class="inp" id="fb-apikey" placeholder="apiKey" style="margin-bottom:6px">
+    <input class="inp" id="fb-projectid" placeholder="projectId" style="margin-bottom:6px">
+    <input class="inp" id="fb-appid" placeholder="appId" style="margin-bottom:12px">
 
-    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Google Sheets 備份（選填）</div>
-    <input class="inp" id="gs-url" placeholder="Apps Script 網址" style="margin-bottom:14px">
+    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Google Sheets（單向備份，選填）</div>
+    <input class="inp" id="gs-url" placeholder="Apps Script 網址 https://script.google.com/..." style="margin-bottom:14px">
 
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <button class="btn btn-g" style="flex:1" id="fb-cancel">取消</button>
-      <button class="btn" style="flex:1" id="fb-save">加入房間</button>
+      <button class="btn" style="flex:1" id="fb-save">儲存連線</button>
     </div>
-    <button id="fb-disconnect" style="width:100%;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">離開房間（改用本機儲存）</button>
+    <button id="fb-disconnect" style="width:100%;padding:9px;border-radius:10px;border:none;background:transparent;color:var(--red);font-size:13px;cursor:pointer;display:none">中斷所有連線</button>
   </div>
 </div>
 
@@ -268,31 +263,18 @@ function defaultData() {
   };
 }
 
-// ===== FIREBASE 設定（寫死，所有人共用同一個資料庫） =====
-var FB_CONFIG = {
-  apiKey: "AIzaSyASq66pgOk1pjmTROYVXArDo0tGfSKFZC4",
-  authDomain: "cat-journal-c1f5e.firebaseapp.com",
-  projectId: "cat-journal-c1f5e",
-  storageBucket: "cat-journal-c1f5e.firebasestorage.app",
-  messagingSenderId: "7855997959",
-  appId: "1:7855997959:web:1d3398df54b2b694a356a2"
-};
-
 // ===== FIREBASE (主要即時同步) =====
-var ROOM_SK = 'catRoomCode';   // 房間碼存在本機
-var GS_SK = 'catGSUrl';
+var FB_SK = 'catFBConfig';
 var db = null;
 var fbUnsubscribe = null;
+var GS_SK = 'catGSUrl';
 var gsUrl = null;
 var gsPending = null;
-var currentRoom = null;        // 目前使用的房間碼
 
-function getRoomCode() {
-  try { return localStorage.getItem(ROOM_SK) || null; } catch(e) { return null; }
+function getFBConfig() {
+  try { var r = localStorage.getItem(FB_SK); return r ? JSON.parse(r) : null; } catch(e) { return null; }
 }
-function saveRoomCode(code) {
-  try { localStorage.setItem(ROOM_SK, code); } catch(e) {}
-}
+function saveFBConfig(cfg) { try { localStorage.setItem(FB_SK, JSON.stringify(cfg)); } catch(e) {} }
 function getGSUrl() { try { return localStorage.getItem(GS_SK) || null; } catch(e) { return null; } }
 function saveGSUrl(url) { try { localStorage.setItem(GS_SK, url); } catch(e) {} }
 
@@ -301,63 +283,46 @@ function setSyncStatus(msg, color) {
   if (el) { el.textContent = msg; el.style.color = color||'var(--t3)'; }
 }
 
-// 產生隨機房間碼（形式：cat-XXXX-XXXX）
-function genRoomCode() {
-  var chars = 'abcdefghijkmnpqrstuvwxyz23456789';
-  var a = '', b = '';
-  for (var i=0;i<4;i++) a += chars[Math.floor(Math.random()*chars.length)];
-  for (var j=0;j<4;j++) b += chars[Math.floor(Math.random()*chars.length)];
-  return 'cat-' + a + '-' + b;
-}
-
-function initFirebase() {
+function initFirebase(cfg) {
   try {
-    if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
-    db = firebase.firestore();
+    if (firebase.apps.length) firebase.apps.forEach(function(a){try{a.delete();}catch(e){}});
+    var app = firebase.initializeApp({apiKey:cfg.apiKey, projectId:cfg.projectId, appId:cfg.appId});
+    db = firebase.firestore(app);
     return true;
   } catch(e) { console.error('FB init error:', e); return false; }
 }
 
-// 房間文件路徑
-function roomDoc() {
-  return db.collection('rooms').doc(currentRoom);
-}
-
 function fbSave() {
-  if (!db || !currentRoom) return;
+  if (!db) return;
   var payload = JSON.parse(JSON.stringify(D));
   payload._ts = Date.now();
-  roomDoc().set(payload)
-    .then(function() { setSyncStatus('🔥 已同步 (' + currentRoom + ')', 'var(--grn)'); gsExport(); })
-    .catch(function(e) { setSyncStatus('⚠️ 同步失敗', 'var(--red)'); console.error(e); });
+  db.collection('catHealth').doc('sharedData').set(payload)
+    .then(function() { setSyncStatus('🔥 已同步', 'var(--grn)'); gsExport(); })
+    .catch(function(e) { setSyncStatus('⚠️ Firebase 失敗', 'var(--red)'); });
 }
 
 function fbLoad(callback) {
-  if (!db || !currentRoom) { callback(false); return; }
+  if (!db) { callback(false); return; }
   setSyncStatus('🔥 載入中...', 'var(--t3)');
-  roomDoc().get()
+  db.collection('catHealth').doc('sharedData').get()
     .then(function(doc) {
       if (doc.exists) {
         var data = doc.data(); var ts = data._ts; delete data._ts;
         D = data; D._ts = ts;
         try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-        setSyncStatus('🔥 已連線 (' + currentRoom + ')', 'var(--grn)');
+        setSyncStatus('🔥 Firebase 已連線', 'var(--grn)');
       } else {
-        // 新房間，把本機資料上傳
-        setSyncStatus('🔥 新房間，上傳資料...', 'var(--t3)');
+        setSyncStatus('🔥 Firebase 已連線（新）', 'var(--grn)');
       }
       callback(true);
     })
-    .catch(function(e) {
-      setSyncStatus('⚠️ 連線失敗，使用本機', 'var(--amb)');
-      callback(false);
-    });
+    .catch(function(e) { setSyncStatus('⚠️ Firebase 連線失敗', 'var(--amb)'); callback(false); });
 }
 
 function fbListen() {
-  if (!db || !currentRoom) return;
+  if (!db) return;
   if (fbUnsubscribe) fbUnsubscribe();
-  fbUnsubscribe = roomDoc().onSnapshot(function(doc) {
+  fbUnsubscribe = db.collection('catHealth').doc('sharedData').onSnapshot(function(doc) {
     if (!doc.exists || doc.metadata.hasPendingWrites) return;
     var data = doc.data();
     if (!data._ts || data._ts <= (D._ts||0)) return;
@@ -407,11 +372,12 @@ function gsExport() {
 }
 
 function openFBModal() {
-  var room = getRoomCode();
-  document.getElementById('room-code-input').value = room || '';
+  var cfg = getFBConfig();
+  document.getElementById('fb-apikey').value = cfg ? cfg.apiKey : '';
+  document.getElementById('fb-projectid').value = cfg ? cfg.projectId : '';
+  document.getElementById('fb-appid').value = cfg ? cfg.appId : '';
   document.getElementById('gs-url').value = getGSUrl() || '';
-  document.getElementById('fb-disconnect').style.display = room ? '' : 'none';
-  document.getElementById('room-hint').style.display = room ? 'none' : '';
+  document.getElementById('fb-disconnect').style.display = (cfg||gsUrl) ? '' : 'none';
   openModal('modal-fb');
 }
 
@@ -509,19 +475,16 @@ function init() {
   selDate = todayStr;
   bindEvents();
   gsUrl = getGSUrl();
-  // Firebase 固定初始化
-  if (initFirebase()) {
-    var room = getRoomCode();
-    if (room) {
-      currentRoom = room;
+  var cfg = getFBConfig();
+  if (cfg && cfg.apiKey && cfg.projectId && cfg.appId) {
+    if (initFirebase(cfg)) {
       fbLoad(function() { renderCatBar(); showPage('cal'); fbListen(); });
     } else {
-      // 沒有房間碼，使用本機模式
-      setSyncStatus('未加入房間', 'var(--t3)');
+      setSyncStatus('⚠️ Firebase 設定有誤', 'var(--red)');
       renderCatBar(); showPage('cal');
     }
   } else {
-    setSyncStatus('⚠️ 連線失敗', 'var(--red)');
+    setSyncStatus(gsUrl ? '📊 Sheets 備份中' : '未連線', 'var(--t3)');
     renderCatBar(); showPage('cal');
   }
 }
@@ -539,32 +502,38 @@ function bindEvents() {
   document.getElementById('modal-care').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-care'); });
   document.getElementById('modal-fb').addEventListener('click', function(e) { if (e.target===this) closeModal('modal-fb'); });
   document.getElementById('fb-cancel').onclick = function() { closeModal('modal-fb'); };
-  document.getElementById('btn-gen-room').onclick = function() {
-    document.getElementById('room-code-input').value = genRoomCode();
-  };
   document.getElementById('fb-save').onclick = function() {
-    var code = document.getElementById('room-code-input').value.trim().toLowerCase();
-    if (!code) { alert('請輸入或產生房間碼'); return; }
+    var apiKey = document.getElementById('fb-apikey').value.trim();
+    var projectId = document.getElementById('fb-projectid').value.trim();
+    var appId = document.getElementById('fb-appid').value.trim();
     var gsUrlVal = document.getElementById('gs-url').value.trim();
+    // Save GS URL
     if (gsUrlVal) { saveGSUrl(gsUrlVal); gsUrl = gsUrlVal; }
     else { localStorage.removeItem(GS_SK); gsUrl = null; }
-
-    saveRoomCode(code);
-    currentRoom = code;
-    if (fbUnsubscribe) { fbUnsubscribe(); fbUnsubscribe = null; }
-    closeModal('modal-fb');
-    fbLoad(function() {
-      renderCatBar(); showPage(curPage); fbListen();
-      fbSave(); // 上傳本機現有資料
-    });
+    // Save Firebase config
+    if (apiKey && projectId && appId) {
+      var cfg = {apiKey:apiKey, projectId:projectId, appId:appId};
+      saveFBConfig(cfg);
+      if (initFirebase(cfg)) {
+        closeModal('modal-fb');
+        setSyncStatus('🔥 連線中...','var(--t3)');
+        fbLoad(function() {
+          renderCatBar(); showPage(curPage); fbListen();
+          fbSave(); // 上傳現有資料
+        });
+      } else { alert('Firebase 設定有誤，請確認'); }
+    } else {
+      closeModal('modal-fb');
+      setSyncStatus(gsUrl?'📊 Sheets 備份中':'未連線','var(--t3)');
+      buildSettingsPage();
+    }
   };
   document.getElementById('fb-disconnect').onclick = function() {
-    if (!confirm('確定離開房間？資料仍保留在本機，不會刪除。')) return;
-    localStorage.removeItem(ROOM_SK);
-    localStorage.removeItem(GS_SK);
-    currentRoom = null; gsUrl = null;
+    if (!confirm('確定中斷所有連線？資料仍保留在本機。')) return;
+    localStorage.removeItem(FB_SK); localStorage.removeItem(GS_SK);
+    db = null; gsUrl = null;
     if (fbUnsubscribe) { fbUnsubscribe(); fbUnsubscribe = null; }
-    setSyncStatus('未加入房間', 'var(--t3)');
+    setSyncStatus('未連線','var(--t3)');
     closeModal('modal-fb'); buildSettingsPage();
   };
   document.getElementById('nav-cal').onclick = function() { showPage('cal'); };
@@ -1395,14 +1364,14 @@ function buildSettingsPage() {
     ['1.4b','偏瘦需增重 ×1.4']
   ];
 
-  var room = getRoomCode();
   var url = getGSUrl();
-  var syncLabel = room ? '🏠 房間：' + room + (url?' + 📊':'') : '🏠 未加入房間';
-  var syncColor = room ? 'var(--grn)' : 'var(--t3)';
+  var fbCfg = getFBConfig();
+  var syncLabel = fbCfg ? '🔥 Firebase：已設定' + (url ? ' + 📊 Sheets 備份' : '') : (url ? '📊 Sheets 備份：已設定' : '🔗 同步：未設定');
+  var syncColor = fbCfg ? 'var(--grn)' : (url ? 'var(--amb)' : 'var(--t3)');
   var html = '<div class="sec" style="margin-top:4px">雲端同步</div>';
   html += '<div class="card" style="display:flex;align-items:center;gap:10px;cursor:pointer" id="btn-open-fb">';
   html += '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:' + syncColor + '">' + syncLabel + '</div>';
-  html += '<div class="sub">與家人共用同一個房間碼即可即時同步</div></div>';
+  html += '<div class="sub">點擊設定，與家人共享即時資料</div></div>';
   html += '<span style="font-size:18px">›</span></div>';
   html += '<div class="sec">貓咪資訊 — ' + catN() + '</div><div class="card">';
   html += '<div class="row"><span class="lbl" style="width:52px">名稱</span><input class="inp" id="s-name" value="' + (c.name||'') + '"></div>';
