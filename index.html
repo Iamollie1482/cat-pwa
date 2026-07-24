@@ -483,7 +483,8 @@ function getRec(date) {
   return D.records[k];
 }
 function getShared(date) {
-  if (!D.shared[date]) D.shared[date] = {pee:0, poop:0, waterLogs:[]};
+  if (!D.shared[date]) D.shared[date] = {pee:0, poop:0, vomitUnknown:0, waterLogs:[]};
+  if (D.shared[date].vomitUnknown === undefined) D.shared[date].vomitUnknown = 0;
   return D.shared[date];
 }
 function getMeals(date) {
@@ -526,6 +527,7 @@ function getDots(date) {
   var d = [];
   if (s && s.pee > 0) d.push('pee');
   if (s && s.poop > 0) d.push('poop');
+  if (s && s.vomitUnknown > 0) d.push('vomit');
   if (s && s.waterLogs && s.waterLogs.length > 0) d.push('water');
   if (r && r.weight) d.push('weight');
   if (D.meals[k] && D.meals[k].length > 0) d.push('meal');
@@ -821,6 +823,16 @@ function buildDayPanel() {
   html += '<button class="rec-btn" data-t="poop" data-d="1">+</button>';
   html += '</div></div>';
 
+  // 嘔吐（不明，共用）
+  html += '<div class="rec-row">';
+  html += '<span class="cnt-dot" style="background:var(--red);flex-shrink:0;width:7px;height:7px"></span>';
+  html += '<span class="rec-lbl">嘔吐 <span class="sec-note" style="font-size:11px">不確定是誰</span></span>';
+  html += '<div class="rec-right">';
+  html += '<button class="rec-btn" data-t="vomitUnknown" data-d="-1">−</button>';
+  html += '<span class="rec-val" id="vomit-unknown-v">' + (s.vomitUnknown||0) + '</span>';
+  html += '<button class="rec-btn" data-t="vomitUnknown" data-d="1">+</button>';
+  html += '</div></div>';
+
   // 飲水
   var wLogs = (s.waterLogs || []);
   var wTotal = wLogs.reduce(function(a,l){return a+(l.drunk||0);}, 0);
@@ -950,12 +962,12 @@ function buildDayPanel() {
 
   var cntBtns = dp.querySelectorAll('.rec-btn');
   for (var bi = 0; bi < cntBtns.length; bi++) {
-    cntBtns[bi].addEventListener('click', (function(t, d) {
+    cntBtns[bi].onclick = (function(t, d) {
       return function() {
         if (t === 'vomit') { chVomit(d); }
         else { chShared(t, d); }
       };
-    })(cntBtns[bi].getAttribute('data-t'), parseInt(cntBtns[bi].getAttribute('data-d'))));
+    })(cntBtns[bi].getAttribute('data-t'), parseInt(cntBtns[bi].getAttribute('data-d')));
   }
 
   // water inline events
@@ -1105,7 +1117,7 @@ function renderCal_light() {
 function chShared(type, delta) {
   var s = getShared(selDate);
   s[type] = Math.max(0, (s[type]||0) + delta);
-  var ids = {pee:'pee-v', poop:'poo-v'};
+  var ids = {pee:'pee-v', poop:'poo-v', vomitUnknown:'vomit-unknown-v'};
   var el = document.getElementById(ids[type]);
   if (el) el.textContent = s[type];
   saveD(); renderCal_light();
