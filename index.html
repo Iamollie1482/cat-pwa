@@ -328,7 +328,7 @@ function fbSave() {
   var payload = JSON.parse(JSON.stringify(D));
   payload._ts = Date.now();
   roomDoc().set(payload)
-    .then(function() { setSyncStatus('🔥 已同步 (' + currentRoom + ')', 'var(--grn)'); gsExport(); })
+    .then(function() { setSyncStatus('🔥 已同步 (' + currentRoom + ')', 'var(--grn)'); })
     .catch(function(e) { setSyncStatus('⚠️ 同步失敗', 'var(--red)'); console.error(e); });
 }
 
@@ -471,6 +471,9 @@ function saveD() {
   try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
   if (db) { fbSave(); }
   else if (gsUrl) { gsExport(); }
+  // gsExport 在 fbSave 的 .then() 裡也會呼叫，這裡補一個保險
+  // 確保即使 Firebase 還沒回應，Sheets 也能即時收到
+  if (db && gsUrl) { gsExport(); }
 }
 
 function catObj() { return D.cats[curCat]; }
