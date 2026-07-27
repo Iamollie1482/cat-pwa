@@ -252,7 +252,7 @@ function nowTime() { return pad(todayD.getHours()) + ':' + pad(todayD.getMinutes
 
 function defaultData() {
   return {
-    cats: [{name:'橘子',weight:4,status:'1.2'},{name:'豆豆',weight:3.5,status:'1.2'}],
+    cats: [],
     records: {},
     shared: {},
     meals: {},
@@ -445,7 +445,13 @@ function gsExport() {
         action:'syncDay', date:selDate, catName:cat.name,
         rec:{weight:r.weight||'', kcal:Math.round(mealDetails.reduce(function(a,m){return a+m.kcal;},0)*10)/10,
           dailyTarget:calcDaily(cat), vomit:r.vomit||0, care:r.care||{}, notes:r.notes||''},
-        shared:s, meals:mealDetails,
+        shared:{
+          pee: s.pee||0,
+          poop: s.poop||0,
+          vomitUnknown: s.vomitUnknown||0,
+          waterLogs: s.waterLogs||[]
+        },
+        meals:mealDetails,
         meds:(D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
       });
     });
@@ -690,6 +696,17 @@ function changeMonth(d) {
 }
 
 function buildCal() {
+  // 未加入房間，顯示引導畫面
+  if (!currentRoom) {
+    document.getElementById('pg-cal').innerHTML = `
+      <div style="text-align:center;padding:40px 20px">
+        <div style="font-size:48px;margin-bottom:16px">🐱</div>
+        <div style="font-size:18px;font-weight:700;color:var(--t1);margin-bottom:8px">歡迎使用貓咪健康日誌</div>
+        <div style="font-size:14px;color:var(--t2);line-height:1.7;margin-bottom:24px">請先加入或建立一個房間<br>才能開始記錄資料</div>
+        <button class="btn" style="padding:13px 32px;font-size:15px" onclick="showPage('settings')">⚙️ 前往設定加入房間</button>
+      </div>`;
+    return;
+  }
   var first = new Date(viewY, viewM, 1).getDay();
   var dim = new Date(viewY, viewM+1, 0).getDate();
   var prev = new Date(viewY, viewM, 0).getDate();
@@ -1180,6 +1197,7 @@ function confirmCare() {
 
 // ===== CALORIE PAGE =====
 function buildCaloriePage() {
+  if (!currentRoom) { showPage('cal'); return; }
   var pg = document.getElementById('pg-calorie');
   var presets = getCatPresets();
 
@@ -1394,6 +1412,7 @@ function buildCaloriePage() {
 
 // ===== FOODS PAGE =====
 function buildFoodsPage() {
+  if (!currentRoom) { showPage('cal'); return; }
   var html = '<div class="sec" style="margin-top:4px">食物庫（所有貓共用）</div><div class="card">';
   if (D.foods.length > 0) {
     for (var i = 0; i < D.foods.length; i++) {
@@ -1584,6 +1603,7 @@ function buildSettingsPage() {
 
 // ===== REPORT PAGE =====
 function buildReportPage() {
+  if (!currentRoom) { showPage('cal'); return; }
   var pg = document.getElementById('pg-report');
   var DAYS = 30;
   var dates = [];
