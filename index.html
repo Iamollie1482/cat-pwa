@@ -511,6 +511,32 @@ function getCatPresets() {
   return D.presets['shared'];
 }
 
+// ===== CAT COLORS =====
+var DEFAULT_COLORS = ['#8B5E3C','#E8914A','#5B8DD9','#C26A9E','#4FAF7A','#D4A842'];
+
+function getCatColor(idx) {
+  if (!D.catColors) D.catColors = {};
+  var cat = D.cats[idx];
+  if (!cat) return DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+  if (!D.catColors[cat.name]) D.catColors[cat.name] = DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
+  return D.catColors[cat.name];
+}
+
+function setCatColor(catName, color) {
+  if (!D.catColors) D.catColors = {};
+  D.catColors[catName] = color;
+  saveD();
+}
+
+function catColorByName(name) {
+  if (!D.catColors) D.catColors = {};
+  if (D.catColors[name]) return D.catColors[name];
+  for (var i = 0; i < D.cats.length; i++) {
+    if (D.cats[i].name === name) return DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+  }
+  return DEFAULT_COLORS[0];
+}
+
 function calcRer(w) { return 30 * parseFloat(w) + 70; }
 function calcDaily(c) {
   return Math.round(calcRer(c.weight) * (parseFloat(c.status) || 1.2) * 10) / 10;
@@ -639,17 +665,71 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 function renderCatBar() {
   var html = '';
   for (var i = 0; i < D.cats.length; i++) {
-    html += '<button class="chip ' + (i===curCat?'on':'off') + '" data-i="' + i + '">' + D.cats[i].name + '</button>';
+    var col = getCatColor(i);
+    var isOn = i === curCat;
+    html += '<button class="chip ' + (isOn?'on':'off') + '" data-i="' + i + '" style="display:flex;align-items:center;gap:6px">';
+    html += '<span class="cat-color-dot" data-ci="' + i + '" style="width:10px;height:10px;border-radius:50%;background:' + col + ';flex-shrink:0;cursor:pointer;border:1.5px solid rgba(255,255,255,0.6)"></span>';
+    html += D.cats[i].name + '</button>';
   }
   var bar = document.getElementById('cat-bar');
   bar.innerHTML = html;
   var chips = bar.querySelectorAll('.chip');
   for (var j = 0; j < chips.length; j++) {
     chips[j].addEventListener('click', (function(idx) {
-      return function() { selectCat(idx); };
+      return function(e) {
+        // 點色點時不切換貓咪
+        if (e.target.classList.contains('cat-color-dot')) return;
+        selectCat(idx);
+      };
     })(parseInt(chips[j].getAttribute('data-i'))));
   }
+  // 色點點擊開啟顏色選擇器
+  var dots = bar.querySelectorAll('.cat-color-dot');
+  for (var d = 0; d < dots.length; d++) {
+    dots[d].addEventListener('click', (function(ci) {
+      return function(e) {
+        e.stopPropagation();
+        openColorPicker(ci, e.target);
+      };
+    })(parseInt(dots[d].getAttribute('data-ci'))));
+  }
   document.getElementById('tb-title').textContent = '🐾 ' + catN();
+}
+
+function openColorPicker(catIdx, dotEl) {
+  var colors = ['#8B5E3C','#E8914A','#E8829A','#5B8DD9','#7BAF82','#C26A9E','#D4A842','#5BBCB0','#E05555','#A0522D','#6A5ACD','#2E8B57'];
+  // 移除已有的選色框
+  var old = document.getElementById('color-picker-popup');
+  if (old) old.remove();
+
+  var popup = document.createElement('div');
+  popup.id = 'color-picker-popup';
+  popup.style.cssText = 'position:fixed;z-index:9999;background:var(--cr);border:1px solid var(--bd);border-radius:12px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;width:192px;box-shadow:0 4px 20px rgba(0,0,0,0.15)';
+
+  var rect = dotEl.getBoundingClientRect();
+  popup.style.top = (rect.bottom + 8) + 'px';
+  popup.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 208)) + 'px';
+
+  colors.forEach(function(c) {
+    var sw = document.createElement('div');
+    sw.style.cssText = 'width:32px;height:32px;border-radius:50%;background:' + c + ';cursor:pointer;border:2px solid transparent;transition:transform .1s';
+    if (getCatColor(catIdx) === c) sw.style.border = '2px solid var(--t1)';
+    sw.addEventListener('click', function() {
+      setCatColor(D.cats[catIdx].name, c);
+      popup.remove();
+      renderCatBar();
+      if (curPage === 'report') buildReportPage();
+    });
+    popup.appendChild(sw);
+  });
+
+  document.body.appendChild(popup);
+  // 點其他地方關閉
+  setTimeout(function() {
+    document.addEventListener('click', function close(e) {
+      if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', close); }
+    });
+  }, 50);
 }
 
 function selectCat(i) { curCat = i; renderCatBar(); showPage(curPage); }
@@ -780,10 +860,11 @@ function selectDate(ds) {
 
 // ===== DAY PANEL =====
 var CARE_ITEMS = [
-  {key:'nail',       ico:'✂️', name:'剪指甲',   days:14, bg:'#EEE8F8'},
-  {key:'litter',     ico:'📦', name:'更換貓砂', days:7,  bg:'#F5DFD0'},
-  {key:'deworming',  ico:'💊', name:'驅蟲',     days:30, bg:'#D8EDDB'},
-  {key:'brushteeth', ico:'🪥', name:'刷牙',     days:2,  bg:'#DFF0FC'}
+  {key:'nail',       ico:'✂️', name:'剪指甲',   days:14,  bg:'#EEE8F8'},
+  {key:'litter',     ico:'📦', name:'更換貓砂', days:7,   bg:'#F5DFD0'},
+  {key:'deworming',  ico:'💊', name:'驅蟲',     days:30,  bg:'#D8EDDB'},
+  {key:'brushteeth', ico:'🪥', name:'刷牙',     days:2,   bg:'#DFF0FC'},
+  {key:'vaccine',    ico:'💉', name:'疫苗',     days:365, bg:'#FBF0F3'}
 ];
 
 function buildDayPanel() {
@@ -1486,7 +1567,20 @@ function buildSettingsPage() {
   html += '<div class="sub">與家人共用同一個房間碼即可即時同步</div></div>';
   html += '<span style="font-size:18px">›</span></div>';
   html += '<div class="sec">貓咪資訊 — ' + catN() + '</div><div class="card">';
+  // 計算年齡
+  var ageStr = '';
+  if (c.birthday) {
+    var bd = new Date(c.birthday + 'T00:00:00');
+    var now = new Date();
+    var ageMs = now - bd;
+    var ageYears = Math.floor(ageMs / (365.25*24*3600*1000));
+    var ageMonths = Math.floor((ageMs % (365.25*24*3600*1000)) / (30.44*24*3600*1000));
+    ageStr = ageYears > 0 ? ageYears + ' 歲 ' + ageMonths + ' 個月' : ageMonths + ' 個月';
+  }
   html += '<div class="row"><span class="lbl" style="width:52px">名稱</span><input class="inp" id="s-name" value="' + (c.name||'') + '"></div>';
+  html += '<div class="row"><span class="lbl" style="width:52px">生日</span><input class="inp-sm" type="date" id="s-birthday" value="' + (c.birthday||'') + '" style="width:145px">';
+  if (ageStr) html += '<span style="font-size:13px;color:var(--rose);font-weight:600;margin-left:6px">🎂 ' + ageStr + '</span>';
+  html += '</div>';
   html += '<div class="row"><span class="lbl" style="width:52px">體重</span><input class="inp-sm" type="number" id="s-weight" value="' + (c.weight||'') + '" min="0.1" step="0.1" style="width:80px"><span class="lbl">公斤</span></div>';
   html += '<div class="row"><span class="lbl" style="width:52px">狀態</span><select class="sel" id="s-status">';
   for (var si = 0; si < statuses.length; si++) {
@@ -1560,6 +1654,7 @@ function buildSettingsPage() {
   document.getElementById('s-status').addEventListener('change', updateRer);
   document.getElementById('btn-save-cat').onclick = function() {
     c.name = document.getElementById('s-name').value.trim() || c.name;
+    c.birthday = document.getElementById('s-birthday').value || '';
     c.weight = parseFloat(document.getElementById('s-weight').value) || c.weight;
     c.status = document.getElementById('s-status').value;
     saveD(); renderCatBar(); buildSettingsPage();
@@ -1612,7 +1707,6 @@ function buildReportPage() {
     dates.push(fmtDate(d));
   }
 
-  // collect per-cat data
   function catReport(cname) {
     var weights = [], waters = [], kcals = [], vomits = [];
     for (var i = 0; i < dates.length; i++) {
@@ -1636,120 +1730,166 @@ function buildReportPage() {
     return {weights:weights, waters:waters, kcals:kcals, vomits:vomits};
   }
 
-  function sparkline(vals, color, unit, maxOverride) {
+  // 多條折線圖（體重、嘔吐共用）
+  function multiLineChart(series, unit) {
+    var allVals = [];
+    series.forEach(function(s) {
+      s.vals.forEach(function(v) { if (v !== null && v > 0) allVals.push(v); });
+    });
+    if (allVals.length === 0) return '<div class="empty" style="padding:8px 0;font-size:12px">無資料</div>';
+
+    var max = Math.max.apply(null, allVals);
+    var min = unit === 'kg' ? Math.min.apply(null, allVals) : 0;
+    var range = max - min || 0.5;
+    var W = 280, H = 100, padT = 10, padB = 18, padL = 30, padR = 8;
+    var chartW = W - padL - padR, chartH = H - padT - padB;
+    var nDates = dates.length;
+
+    var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block">';
+    // 格線
+    svg += '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
+    svg += '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
+    svg += '<line x1="'+padL+'" y1="'+(padT+chartH/2)+'" x2="'+(W-padR)+'" y2="'+(padT+chartH/2)+'" stroke="rgba(0,0,0,0.04)" stroke-width="1" stroke-dasharray="3,2"/>';
+    // Y軸標籤
+    svg += '<text x="'+(padL-4)+'" y="'+(padT+4)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+max.toFixed(unit==='kg'?1:0)+'</text>';
+    svg += '<text x="'+(padL-4)+'" y="'+(H-padB)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+min.toFixed(unit==='kg'?1:0)+'</text>';
+    // X軸日期（首、中、末）
+    [0, Math.floor(nDates/2), nDates-1].forEach(function(idx) {
+      var xp = padL + Math.round(idx * chartW / (nDates-1));
+      svg += '<text x="'+xp+'" y="'+(H-padB+10)+'" font-size="8" fill="rgba(0,0,0,0.35)" text-anchor="middle">'+(dates[idx]?dates[idx].slice(5):'')+'</text>';
+    });
+    // 每條線
+    series.forEach(function(s) {
+      var points = [];
+      for (var i = 0; i < s.vals.length; i++) {
+        var v = s.vals[i];
+        if (v === null || (unit !== 'kg' && v === 0)) continue;
+        var xp = padL + Math.round(i * chartW / (nDates-1));
+        var yp = padT + Math.round((1-(v-min)/range) * chartH);
+        points.push({x:xp, y:yp, v:v});
+      }
+      if (points.length === 0) return;
+      if (points.length === 1) {
+        svg += '<circle cx="'+points[0].x+'" cy="'+points[0].y+'" r="3" fill="'+s.color+'"/>';
+        return;
+      }
+      svg += '<polyline points="'+points.map(function(p){return p.x+','+p.y;}).join(' ')+'" fill="none" stroke="'+s.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      points.forEach(function(p) {
+        svg += '<circle cx="'+p.x+'" cy="'+p.y+'" r="2.5" fill="'+s.color+'"/>';
+      });
+    });
+    svg += '</svg>';
+
+    // 統計列
+    var statsHtml = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">';
+    series.forEach(function(s) {
+      var nonNull = s.vals.filter(function(v){ return v !== null && v > 0; });
+      if (nonNull.length === 0) return;
+      var latest = nonNull[nonNull.length-1];
+      var avg = nonNull.reduce(function(a,b){return a+b;},0)/nonNull.length;
+      statsHtml += '<span style="font-size:11px;color:var(--t2);display:flex;align-items:center;gap:4px">';
+      statsHtml += '<span style="display:inline-block;width:14px;height:2.5px;background:'+s.color+';border-radius:2px"></span>';
+      statsHtml += s.name+': 最新 '+latest.toFixed(unit==='kg'?2:0)+unit;
+      if (unit==='kg') statsHtml += ' / 平均 '+avg.toFixed(2)+unit;
+      statsHtml += '</span>';
+    });
+    statsHtml += '</div>';
+    return svg + statsHtml;
+  }
+
+  // 長條圖（飲水）
+  function sparkline(vals, color, unit) {
     var nonNull = vals.filter(function(v){return v!==null && v>0;});
     if (nonNull.length === 0) return '<div class="empty" style="padding:8px 0;font-size:12px">無資料</div>';
-    var max = maxOverride || Math.max.apply(null, nonNull);
-    var min = 0;
-    var W = 280, H = 60, pad = 4;
-    var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block">';
-    // grid lines
-    svg += '<line x1="0" y1="' + (H-pad) + '" x2="' + W + '" y2="' + (H-pad) + '" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>';
-    svg += '<line x1="0" y1="' + ((H-pad)/2) + '" x2="' + W + '" y2="' + ((H-pad)/2) + '" stroke="rgba(0,0,0,0.04)" stroke-width="1" stroke-dasharray="3,3"/>';
-    // bars
-    var bw = Math.floor(W / vals.length) - 1;
+    var max = Math.max.apply(null, nonNull);
+    var W = 280, H = 55, pad = 4;
+    var bw = Math.max(2, Math.floor(W / vals.length) - 1);
+    var svg = '<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">';
+    svg += '<line x1="0" y1="'+(H-pad)+'" x2="'+W+'" y2="'+(H-pad)+'" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>';
     for (var i = 0; i < vals.length; i++) {
-      if (vals[i] === null || vals[i] === 0) continue;
-      var bh = Math.max(3, Math.round(((vals[i]-min)/(max-min||1)) * (H-pad*2)));
+      if (!vals[i] || vals[i] <= 0) continue;
+      var bh = Math.max(3, Math.round((vals[i]/max) * (H-pad*2)));
       var x = Math.round(i * W / vals.length);
-      var y = H - pad - bh;
-      svg += '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="2" fill="' + color + '" opacity="0.8"/>';
+      svg += '<rect x="'+x+'" y="'+(H-pad-bh)+'" width="'+bw+'" height="'+bh+'" rx="2" fill="'+color+'" opacity="0.8"/>';
     }
     svg += '</svg>';
-    var avg = nonNull.length ? (nonNull.reduce(function(a,b){return a+b;},0)/nonNull.length) : 0;
-    var latest = null;
-    for (var j = vals.length-1; j >= 0; j--) { if (vals[j] !== null && vals[j] > 0) { latest = vals[j]; break; } }
-    return svg + '<div style="display:flex;justify-content:space-between;margin-top:4px">'
-      + '<span class="sub">平均 ' + avg.toFixed(1) + ' ' + unit + '</span>'
-      + (latest !== null ? '<span class="sub">最新 ' + latest + ' ' + unit + '</span>' : '')
-      + '</div>';
+    var avg = nonNull.reduce(function(a,b){return a+b;},0)/nonNull.length;
+    return svg+'<div style="display:flex;justify-content:space-between;margin-top:4px"><span class="sub">平均 '+avg.toFixed(0)+' '+unit+'</span><span class="sub">最新 '+nonNull[nonNull.length-1]+' '+unit+'</span></div>';
   }
 
-  function lineChart(vals, color, unit) {
-    var nonNull = vals.map(function(v,i){return v!==null?{i:i,v:v}:null;}).filter(Boolean);
-    if (nonNull.length < 2) return '<div class="empty" style="padding:8px 0;font-size:12px">資料不足（需至少2筆）</div>';
-    var max = Math.max.apply(null, nonNull.map(function(p){return p.v;}));
-    var min = Math.min.apply(null, nonNull.map(function(p){return p.v;}));
-    var range = max - min || 0.1;
-    var W = 280, H = 70, pad = 8;
-    var pts = nonNull.map(function(p) {
-      var x = Math.round(p.i * W / (vals.length-1));
-      var y = Math.round(pad + (1-(p.v-min)/range) * (H-pad*2));
-      return x + ',' + y;
-    });
-    var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block">';
-    svg += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>';
-    nonNull.forEach(function(p,pi) {
-      var x = Math.round(p.i * W / (vals.length-1));
-      var y = Math.round(pad + (1-(p.v-min)/range) * (H-pad*2));
-      svg += '<circle cx="' + x + '" cy="' + y + '" r="3" fill="' + color + '"/>';
-    });
-    svg += '</svg>';
-    var latest = nonNull[nonNull.length-1].v;
-    var prev = nonNull.length >= 2 ? nonNull[nonNull.length-2].v : null;
-    var diff = prev !== null ? (latest - prev) : null;
-    return svg + '<div style="display:flex;justify-content:space-between;margin-top:4px">'
-      + '<span class="sub">最低 ' + min.toFixed(2) + ' ' + unit + '</span>'
-      + '<span class="sub">最新 ' + latest.toFixed(2) + (diff!==null?' (' + (diff>=0?'+':'') + diff.toFixed(2) + ')':'') + ' ' + unit + '</span>'
-      + '</div>';
-  }
+  // 收集資料
+  var allReps = D.cats.map(function(cat) {
+    return {cat:cat, rep:catReport(cat.name), color:catColorByName(cat.name)};
+  });
+  var sharedVomits = dates.map(function(dt) {
+    var s = D.shared[dt]; return (s && s.vomitUnknown > 0) ? s.vomitUnknown : 0;
+  });
+  var sharedWaters = dates.map(function(dt) {
+    var s = D.shared[dt];
+    if (!s || !s.waterLogs) return null;
+    var t = s.waterLogs.reduce(function(a,l){return a+(l.drunk||0);},0);
+    return t > 0 ? t : null;
+  });
 
-  var html = '<div class="sec" style="margin-top:4px">近30天報表 — ' + catN() + '</div>';
+  // 圖例
+  var legendHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:8px 0">';
+  allReps.forEach(function(cr) {
+    legendHtml += '<div style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;background:'+cr.color+';border-radius:2px;display:inline-block"></span><span style="font-size:12px;color:var(--t2);font-weight:500">'+cr.cat.name+'</span></div>';
+  });
+  legendHtml += '<div style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;background:var(--red);border-radius:2px;display:inline-block"></span><span style="font-size:12px;color:var(--t2);font-weight:500">不明嘔吐</span></div>';
+  legendHtml += '</div>';
 
-  var rep = catReport(catN());
+  var html = '<div class="sec" style="margin-top:4px">近30天報表</div>';
+  html += legendHtml;
 
-  // Weight
+  // 體重折線圖
   html += '<div class="card2" style="margin-bottom:10px">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">⚖️ 體重趨勢（kg）</div>';
-  html += lineChart(rep.weights, '#7BAF82', 'kg');
+  html += multiLineChart(allReps.map(function(cr){ return {vals:cr.rep.weights, color:cr.color, name:cr.cat.name}; }), 'kg');
   html += '</div>';
 
-  // Water
+  // 嘔吐折線圖（各貓 + 共用不明）
+  var vomitSeries = allReps.map(function(cr){ return {vals:cr.rep.vomits, color:cr.color, name:cr.cat.name}; });
+  vomitSeries.push({vals:sharedVomits, color:'var(--red)', name:'不明'});
+  var hasAnyVomit = vomitSeries.some(function(s){ return s.vals.some(function(v){return v>0;}); });
+  html += '<div class="card2" style="margin-bottom:10px">';
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🤢 嘔吐紀錄（次）</div>';
+  html += hasAnyVomit ? multiLineChart(vomitSeries, '次') : '<div class="empty" style="padding:8px 0;font-size:12px">近30天無嘔吐紀錄 ✓</div>';
+  html += '</div>';
+
+  // 飲水長條圖
   html += '<div class="card2" style="margin-bottom:10px">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">💧 每日飲水（ml）<span class="sec-note">全貓共用</span></div>';
-  html += sparkline(rep.waters, '#5BBCB0', 'ml');
+  html += sparkline(sharedWaters, 'var(--tel)', 'ml');
   html += '</div>';
 
-  // Kcal
+  // 熱量折線圖
   html += '<div class="card2" style="margin-bottom:10px">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🍽️ 每日熱量（kcal）</div>';
-  var daily = calcDaily(catObj());
-  html += sparkline(rep.kcals, '#E8829A', 'kcal', daily * 1.5);
-  // target line hint
-  html += '<div class="sub" style="margin-top:2px">每日目標：' + daily + ' kcal</div>';
+  html += multiLineChart(allReps.map(function(cr){ return {vals:cr.rep.kcals, color:cr.color, name:cr.cat.name}; }), 'kcal');
   html += '</div>';
 
-  // Vomit
-  var totalVomit = rep.vomits.reduce(function(a,b){return a+b;},0);
-  var vomitDays = rep.vomits.filter(function(v){return v>0;}).length;
-  html += '<div class="card2" style="margin-bottom:10px">';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🤢 嘔吐紀錄</div>';
-  if (totalVomit === 0) {
-    html += '<div class="empty" style="padding:8px 0;font-size:12px">近30天無嘔吐紀錄 ✓</div>';
-  } else {
-    html += sparkline(rep.vomits, '#E05555', '次');
-    html += '<div class="sub" style="margin-top:4px">共 ' + totalVomit + ' 次，' + vomitDays + ' 天有嘔吐</div>';
-  }
-  html += '</div>';
-
-  // Recent weight table
-  var wEntries = [];
-  var rks = Object.keys(D.records);
-  for (var ri = 0; ri < rks.length; ri++) {
-    if (rks[ri].indexOf(catN()+'|')===0 && D.records[rks[ri]].weight) {
-      wEntries.push({dt: rks[ri].split('|')[1], w: D.records[rks[ri]].weight});
-    }
-  }
-  wEntries.sort(function(a,b){return b.dt>a.dt?1:-1;});
-  wEntries = wEntries.slice(0,10);
-  if (wEntries.length > 0) {
-    html += '<div class="sec">體重紀錄明細</div><div class="card">';
-    for (var wi2 = 0; wi2 < wEntries.length; wi2++) {
-      var diff2 = wi2 < wEntries.length-1 ? (wEntries[wi2].w - wEntries[wi2+1].w) : null;
-      var diffStr = diff2 !== null ? ' <span style="color:' + (diff2>0?'var(--red)':'var(--grn)') + ';font-size:11px">(' + (diff2>0?'+':'') + parseFloat(diff2).toFixed(2) + 'kg)</span>' : '';
-      html += '<div class="wh-row"><span style="color:var(--t3)">' + wEntries[wi2].dt + '</span><span style="font-weight:600">' + wEntries[wi2].w + ' kg' + diffStr + '</span></div>';
-    }
-    html += '</div>';
+  // 體重明細（所有貓）
+  var hasWEntries = false;
+  var wTableHtml = '<div class="card">';
+  allReps.forEach(function(cr) {
+    var entries = Object.keys(D.records)
+      .filter(function(k){ return k.indexOf(cr.cat.name+'|')===0 && D.records[k].weight; })
+      .map(function(k){ return {dt:k.split('|')[1], w:parseFloat(D.records[k].weight)}; })
+      .sort(function(a,b){ return b.dt>a.dt?1:-1; })
+      .slice(0,6);
+    if (entries.length === 0) return;
+    hasWEntries = true;
+    wTableHtml += '<div style="font-size:12px;font-weight:600;color:'+cr.color+';padding:6px 0 4px;border-bottom:1px solid var(--bd)">'+cr.cat.name+'</div>';
+    entries.forEach(function(e, ei) {
+      var diff = ei < entries.length-1 ? (e.w - entries[ei+1].w) : null;
+      var ds = diff !== null ? ' <span style="color:'+(diff>0?'var(--red)':'var(--grn)')+';font-size:11px">('+(diff>0?'+':'')+diff.toFixed(2)+')</span>' : '';
+      wTableHtml += '<div class="wh-row"><span style="color:var(--t3)">'+e.dt+'</span><span style="font-weight:600">'+e.w+' kg'+ds+'</span></div>';
+    });
+  });
+  wTableHtml += '</div>';
+  if (hasWEntries) {
+    html += '<div class="sec">體重紀錄明細</div>' + wTableHtml;
   }
 
   html += '<div style="height:20px"></div>';
