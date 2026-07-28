@@ -230,7 +230,11 @@ input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
   <div class="modal">
     <div class="modal-handle"></div>
     <h3 id="mcare-title">記錄日期</h3>
-    <input type="date" class="inp" id="mcare-date" style="margin-bottom:12px">
+    <input type="date" class="inp" id="mcare-date" style="margin-bottom:10px">
+    <div id="mcare-vaccine-row" style="display:none;margin-bottom:12px">
+      <label style="font-size:12px;color:var(--t3);display:block;margin-bottom:5px">疫苗種類（選填）</label>
+      <input class="inp" id="mcare-vaccine-type" placeholder="例：三合一、狂犬病...">
+    </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-g" style="flex:1" id="mcare-cancel">取消</button>
       <button class="btn" style="flex:1" id="mcare-ok">儲存</button>
@@ -433,28 +437,45 @@ function gsExport() {
   if (!gsUrl) return;
   clearTimeout(gsPending);
   gsPending = setTimeout(function() {
+    var s = D.shared[selDate] || {};
+
+    // 共用分頁只寫一次（不跟著貓咪迴圈走）
+    gsPost({
+      action: 'syncShared',
+      date: selDate,
+      shared: {
+        pee: s.pee||0,
+        poop: s.poop||0,
+        vomitUnknown: s.vomitUnknown||0,
+        waterLogs: s.waterLogs||[]
+      }
+    });
+
+    // 每隻貓各自寫入自己的分頁
     D.cats.forEach(function(cat) {
       var r = D.records[cat.name+'|'+selDate] || {};
       var meals = D.meals[cat.name+'|'+selDate] || [];
-      var s = D.shared[selDate] || {};
       var mealDetails = meals.map(function(m) {
         var f = foodById(m.foodId);
         return {time:m.time, name:f?f.name:'?', portions:m.portions, kcal:f?f.kcal*m.portions:0};
       });
       gsPost({
-        action:'syncDay', date:selDate, catName:cat.name,
-        rec:{weight:r.weight||'', kcal:Math.round(mealDetails.reduce(function(a,m){return a+m.kcal;},0)*10)/10,
-          dailyTarget:calcDaily(cat), vomit:r.vomit||0, care:r.care||{}, notes:r.notes||''},
-        shared:{
-          pee: s.pee||0,
-          poop: s.poop||0,
-          vomitUnknown: s.vomitUnknown||0,
-          waterLogs: s.waterLogs||[]
+        action: 'syncCat',
+        date: selDate,
+        catName: cat.name,
+        rec: {
+          weight: r.weight||'',
+          kcal: Math.round(mealDetails.reduce(function(a,m){return a+m.kcal;},0)*10)/10,
+          dailyTarget: calcDaily(cat),
+          vomit: r.vomit||0,
+          care: r.care||{},
+          notes: r.notes||''
         },
-        meals:mealDetails,
-        meds:(D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
+        meals: mealDetails,
+        meds: (D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
       });
     });
+
     gsPost({action:'syncFoods', foods:D.foods});
   }, 2000);
 }
@@ -1010,8 +1031,14 @@ function buildDayPanel() {
     html += '<div class="care-row" data-care="' + item.key + '">';
     html += '<div class="care-ico" style="background:' + item.bg + '">' + item.ico + '</div>';
     html += '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + item.name + '</div>';
-    html += '<div style="font-size:11px;color:var(--t3)">' + (last||'點擊記錄') + '</div></div>';
-    html += badge + '</div>';
+    // 疫苗顯示種類
+    if (item.key === 'vaccine' && last) {
+      var vtype = getLastVaccineTypeForDate(last);
+      html += '<div style="font-size:11px;color:var(--t3)">' + last + (vtype ? ' · ' + vtype : '') + '</div>';
+    } else {
+      html += '<div style="font-size:11px;color:var(--t3)">' + (last||'點擊記錄') + '</div>';
+    }
+    html += '</div>' + badge + '</div>';
   }
   // 嘔吐（獨立計次，不需要日期）
   html += '<div class="care-row" style="cursor:default">';
@@ -1265,14 +1292,44 @@ function openCareModal(key) {
   for (var i = 0; i < CARE_ITEMS.length; i++) if (CARE_ITEMS[i].key===key) { item=CARE_ITEMS[i]; break; }
   document.getElementById('mcare-title').textContent = '記錄 ' + item.name;
   document.getElementById('mcare-date').value = lastCareDate(key) || todayStr;
+  // 疫苗欄位只在疫苗時顯示
+  var isVaccine = key === 'vaccine';
+  document.getElementById('mcare-vaccine-row').style.display = isVaccine ? '' : 'none';
+  if (isVaccine) {
+    // 找最近一筆疫苗種類
+    var lastType = getLastVaccineType();
+    document.getElementById('mcare-vaccine-type').value = lastType || '';
+  }
   openModal('modal-care');
 }
+
+function getLastVaccineType() {
+  var entries = Object.keys(D.records)
+    .filter(function(k) { return k.indexOf(catN()+'|')===0 && D.records[k].care && D.records[k].care.vaccine; })
+    .sort().reverse();
+  for (var i = 0; i < entries.length; i++) {
+    var vt = D.records[entries[i]].care.vaccineType;
+    if (vt) return vt;
+  }
+  return '';
+}
+
+function getLastVaccineTypeForDate(date) {
+  var k = catN() + '|' + date;
+  var r = D.records[k];
+  return (r && r.care && r.care.vaccineType) ? r.care.vaccineType : '';
+}
+
 function confirmCare() {
   var dt = document.getElementById('mcare-date').value;
   if (!dt) return;
   var r = getRec(dt);
   if (!r.care) r.care = {};
   r.care[curCareKey] = true;
+  if (curCareKey === 'vaccine') {
+    var vtype = document.getElementById('mcare-vaccine-type').value.trim();
+    r.care.vaccineType = vtype || '';
+  }
   saveD(); closeModal('modal-care'); renderCal_light(); buildDayPanel();
 }
 
@@ -1892,8 +1949,38 @@ function buildReportPage() {
     html += '<div class="sec">體重紀錄明細</div>' + wTableHtml;
   }
 
+  // 疫苗記錄明細
+  html += buildVaccineSection(allReps);
+
   html += '<div style="height:20px"></div>';
   pg.innerHTML = html;
+}
+
+function buildVaccineSection(allReps) {
+  var html = '';
+  var hasAny = false;
+  allReps.forEach(function(cr) {
+    var entries = Object.keys(D.records)
+      .filter(function(k) {
+        return k.indexOf(cr.cat.name+'|')===0 &&
+          D.records[k].care && D.records[k].care.vaccine;
+      })
+      .map(function(k) {
+        return {
+          dt: k.split('|')[1],
+          type: (D.records[k].care.vaccineType) || '（未填種類）'
+        };
+      })
+      .sort(function(a,b){ return b.dt > a.dt ? 1 : -1; });
+    if (entries.length === 0) return;
+    hasAny = true;
+    html += '<div style="font-size:12px;font-weight:600;color:' + cr.color + ';padding:6px 0 4px;border-bottom:1px solid var(--bd)">' + cr.cat.name + '</div>';
+    entries.forEach(function(e) {
+      html += '<div class="wh-row"><span style="color:var(--t3)">' + e.dt + '</span><span style="font-weight:500">💉 ' + e.type + '</span></div>';
+    });
+  });
+  if (!hasAny) return '';
+  return '<div class="sec">疫苗記錄明細</div><div class="card">' + html + '</div>';
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
