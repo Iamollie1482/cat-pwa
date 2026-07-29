@@ -799,13 +799,15 @@ function changeMonth(d) {
 function buildCal() {
   // 未加入房間，顯示引導畫面
   if (!currentRoom) {
-    document.getElementById('pg-cal').innerHTML = `
-      <div style="text-align:center;padding:40px 20px">
-        <div style="font-size:48px;margin-bottom:16px">🐱</div>
-        <div style="font-size:18px;font-weight:700;color:var(--t1);margin-bottom:8px">歡迎使用貓咪健康日誌</div>
-        <div style="font-size:14px;color:var(--t2);line-height:1.7;margin-bottom:24px">請先加入或建立一個房間<br>才能開始記錄資料</div>
-        <button class="btn" style="padding:13px 32px;font-size:15px" onclick="showPage('settings')">⚙️ 前往設定加入房間</button>
-      </div>`;
+    document.getElementById('pg-cal').innerHTML =
+      '<div style="text-align:center;padding:40px 20px">' +
+      '<div style="font-size:48px;margin-bottom:16px">🐱</div>' +
+      '<div style="font-size:18px;font-weight:700;color:var(--t1);margin-bottom:8px">歡迎使用貓咪健康日誌</div>' +
+      '<div style="font-size:14px;color:var(--t2);line-height:1.7;margin-bottom:24px">請先加入或建立一個房間<br>才能開始記錄資料</div>' +
+      '<button class="btn" style="padding:13px 32px;font-size:15px" id="btn-goto-settings">⚙️ 前往設定加入房間</button>' +
+      '</div>';
+    var gs = document.getElementById('btn-goto-settings');
+    if (gs) gs.onclick = function() { showPage('settings'); };
     return;
   }
   var first = new Date(viewY, viewM, 1).getDay();
