@@ -316,6 +316,10 @@ function genRoomCode() {
 
 function initFirebase() {
   try {
+    if (typeof firebase === 'undefined') {
+      console.error('Firebase SDK not loaded');
+      return false;
+    }
     if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     db = firebase.firestore();
     return true;
@@ -608,26 +612,37 @@ function lastCareDate(key) {
 
 // ===== INIT =====
 function init() {
-  D = loadD();
-  curCat = 0; curPage = 'cal';
-  viewY = todayD.getFullYear(); viewM = todayD.getMonth();
-  selDate = todayStr;
-  bindEvents();
-  gsUrl = getGSUrl();
-  // Firebase 固定初始化
-  if (initFirebase()) {
-    var room = getRoomCode();
-    if (room) {
-      currentRoom = room;
-      fbLoad(function() { renderCatBar(); showPage('cal'); fbListen(); });
-    } else {
-      // 沒有房間碼，使用本機模式
-      setSyncStatus('未加入房間', 'var(--t3)');
+  try {
+    D = loadD();
+    curCat = 0; curPage = 'cal';
+    viewY = todayD.getFullYear(); viewM = todayD.getMonth();
+    selDate = todayStr;
+    bindEvents();
+    gsUrl = getGSUrl();
+    // Firebase 固定初始化
+    try {
+      if (initFirebase()) {
+        var room = getRoomCode();
+        if (room) {
+          currentRoom = room;
+          fbLoad(function() { renderCatBar(); showPage('cal'); fbListen(); });
+        } else {
+          setSyncStatus('未加入房間', 'var(--t3)');
+          renderCatBar(); showPage('cal');
+        }
+      } else {
+        setSyncStatus('⚠️ Firebase 連線失敗', 'var(--red)');
+        renderCatBar(); showPage('cal');
+      }
+    } catch(fbErr) {
+      console.error('Firebase error:', fbErr);
+      setSyncStatus('⚠️ Firebase 錯誤', 'var(--red)');
       renderCatBar(); showPage('cal');
     }
-  } else {
-    setSyncStatus('⚠️ 連線失敗', 'var(--red)');
-    renderCatBar(); showPage('cal');
+  } catch(e) {
+    console.error('Init error:', e);
+    // 最後防線：強制顯示設定頁
+    try { showPage('settings'); } catch(e2) {}
   }
 }
 
