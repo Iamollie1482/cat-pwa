@@ -1,5 +1,10 @@
-const CACHE = 'cat-health-v3';
-const FILES = ['./index.html', './manifest.json'];
+const CACHE = 'cat-health-v4';
+const FILES = [
+  './index.html',
+  './manifest.json',
+  './firebase-app.js',
+  './firebase-firestore.js'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
@@ -14,7 +19,6 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // 永遠先嘗試網路取得最新版，失敗才用快取
   e.respondWith(
     fetch(e.request).then(function(response) {
       var clone = response.clone();
