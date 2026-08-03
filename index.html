@@ -12,6 +12,7 @@
 <title>貓咪健康日誌</title>
 <script src="firebase-app.js"></script>
 <script src="firebase-firestore.js"></script>
+
 <style>
 :root{
   --cr:#FAF6EF;--cr2:#F3EDE2;--cr3:#E8DFD0;
@@ -229,15 +230,17 @@ input[type="time"]::-webkit-datetime-edit-ampm-field{display:none!important}
 <div class="modal-bg" id="modal-care">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3 id="mcare-title">記錄日期</h3>
+    <h3 id="mcare-title">護理紀錄</h3>
+    <div id="mcare-history" style="margin-bottom:12px"></div>
+    <div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px">新增紀錄</div>
     <input type="date" class="inp" id="mcare-date" style="margin-bottom:10px">
     <div id="mcare-vaccine-row" style="display:none;margin-bottom:12px">
       <label style="font-size:12px;color:var(--t3);display:block;margin-bottom:5px">疫苗種類（選填）</label>
       <input class="inp" id="mcare-vaccine-type" placeholder="例：三合一、狂犬病...">
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-g" style="flex:1" id="mcare-cancel">取消</button>
-      <button class="btn" style="flex:1" id="mcare-ok">儲存</button>
+      <button class="btn btn-g" style="flex:1" id="mcare-cancel">關閉</button>
+      <button class="btn" style="flex:1" id="mcare-ok">新增</button>
     </div>
   </div>
 </div>
@@ -283,50 +286,41 @@ var FB_CONFIG = {
 };
 
 // ===== FIREBASE (主要即時同步) =====
-var ROOM_SK = 'catRoomCode';   // 房間碼存在本機
+var ROOM_SK = 'catRoomCode';
 var GS_SK = 'catGSUrl';
 var db = null;
 var fbUnsubscribe = null;
 var gsUrl = null;
 var gsPending = null;
-var currentRoom = null;        // 目前使用的房間碼
+var currentRoom = null;
 
-function getRoomCode() {
-  try { return localStorage.getItem(ROOM_SK) || null; } catch(e) { return null; }
-}
-function saveRoomCode(code) {
-  try { localStorage.setItem(ROOM_SK, code); } catch(e) {}
-}
-function getGSUrl() { try { return localStorage.getItem(GS_SK) || null; } catch(e) { return null; } }
-function saveGSUrl(url) { try { localStorage.setItem(GS_SK, url); } catch(e) {} }
+function getRoomCode() { try { return localStorage.getItem(ROOM_SK)||null; } catch(e){return null;} }
+function saveRoomCode(c) { try { localStorage.setItem(ROOM_SK,c); } catch(e){} }
+function getGSUrl() { try { return localStorage.getItem(GS_SK)||null; } catch(e){return null;} }
+function saveGSUrl(u) { try { localStorage.setItem(GS_SK,u); } catch(e){} }
 
 function setSyncStatus(msg, color) {
   var el = document.getElementById('sync-status');
   if (el) { el.textContent = msg; el.style.color = color||'var(--t3)'; }
 }
 
-// 產生隨機房間碼（形式：cat-XXXX-XXXX）
 function genRoomCode() {
   var chars = 'abcdefghijkmnpqrstuvwxyz23456789';
-  var a = '', b = '';
-  for (var i=0;i<4;i++) a += chars[Math.floor(Math.random()*chars.length)];
-  for (var j=0;j<4;j++) b += chars[Math.floor(Math.random()*chars.length)];
-  return 'cat-' + a + '-' + b;
+  var a='',b='';
+  for(var i=0;i<4;i++) a+=chars[Math.floor(Math.random()*chars.length)];
+  for(var j=0;j<4;j++) b+=chars[Math.floor(Math.random()*chars.length)];
+  return 'cat-'+a+'-'+b;
 }
 
 function initFirebase() {
   try {
-    if (typeof firebase === 'undefined') {
-      console.error('Firebase SDK not loaded');
-      return false;
-    }
+    if (typeof firebase === 'undefined') { console.error('Firebase SDK not loaded'); return false; }
     if (!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
     db = firebase.firestore();
     return true;
   } catch(e) { console.error('FB init error:', e); return false; }
 }
 
-// 房間文件路徑
 function roomDoc() {
   return db.collection('rooms').doc(currentRoom);
 }
@@ -336,77 +330,50 @@ function fbSave() {
   var payload = JSON.parse(JSON.stringify(D));
   payload._ts = Date.now();
   roomDoc().set(payload)
-    .then(function() { setSyncStatus('🔥 已同步 (' + currentRoom + ')', 'var(--grn)'); })
-    .catch(function(e) { setSyncStatus('⚠️ 同步失敗', 'var(--red)'); console.error(e); });
+    .then(function() { setSyncStatus('🔥 已同步 ('+currentRoom+')','var(--grn)'); gsExport(); })
+    .catch(function(e) { setSyncStatus('⚠️ 同步失敗','var(--red)'); console.error(e); });
 }
 
 function fbLoad(callback) {
   if (!db || !currentRoom) { callback(false); return; }
-  setSyncStatus('🔥 載入中...', 'var(--t3)');
-
-  // 判斷本機是否有實際資料
+  setSyncStatus('🔥 載入中...','var(--t3)');
   var localHasData = !!(D && D.cats && D.cats.length > 0 &&
-    (Object.keys(D.records||{}).length > 0 ||
-     Object.keys(D.shared||{}).length > 0 ||
-     Object.keys(D.meals||{}).length > 0));
-  var localTs = D._ts || 0;
-
+    (Object.keys(D.records||{}).length > 0 || Object.keys(D.shared||{}).length > 0 || Object.keys(D.meals||{}).length > 0));
+  var localTs = D._ts||0;
   roomDoc().get()
     .then(function(doc) {
       if (doc.exists) {
-        // 雲端房間有資料
         var cloudData = doc.data();
-        var cloudTs = cloudData._ts || 0;
-
+        var cloudTs = cloudData._ts||0;
         if (localHasData && localTs > cloudTs) {
-          // 本機資料比較新 → 上傳本機覆蓋雲端
-          setSyncStatus('🔥 上傳本機資料...', 'var(--t3)');
+          setSyncStatus('🔥 上傳本機資料...','var(--t3)');
           var payload = JSON.parse(JSON.stringify(D));
           payload._ts = Date.now();
           roomDoc().set(payload)
-            .then(function() {
-              setSyncStatus('🔥 已連線 (' + currentRoom + ')', 'var(--grn)');
-              callback(true);
-            })
-            .catch(function(e) {
-              setSyncStatus('⚠️ 上傳失敗，使用本機', 'var(--amb)');
-              callback(false);
-            });
+            .then(function() { setSyncStatus('🔥 已連線 ('+currentRoom+')','var(--grn)'); callback(true); })
+            .catch(function(e) { setSyncStatus('⚠️ 上傳失敗','var(--amb)'); callback(false); });
         } else {
-          // 雲端資料比較新或一樣 → 用雲端
           var ts = cloudData._ts; delete cloudData._ts;
           D = cloudData; D._ts = ts;
           try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-          setSyncStatus('🔥 已連線 (' + currentRoom + ')', 'var(--grn)');
+          setSyncStatus('🔥 已連線 ('+currentRoom+')','var(--grn)');
           callback(true);
         }
       } else {
-        // 雲端房間不存在
         if (localHasData) {
-          // 本機有資料 → 上傳到新房間（不管來源是什麼）
-          setSyncStatus('🔥 建立房間，上傳資料...', 'var(--t3)');
+          setSyncStatus('🔥 建立房間，上傳資料...','var(--t3)');
           var payload2 = JSON.parse(JSON.stringify(D));
           payload2._ts = Date.now();
           roomDoc().set(payload2)
-            .then(function() {
-              setSyncStatus('🔥 已連線 (' + currentRoom + ')', 'var(--grn)');
-              callback(true);
-            })
-            .catch(function(e) {
-              setSyncStatus('⚠️ 上傳失敗，使用本機', 'var(--amb)');
-              callback(false);
-            });
+            .then(function() { setSyncStatus('🔥 已連線 ('+currentRoom+')','var(--grn)'); callback(true); })
+            .catch(function(e) { setSyncStatus('⚠️ 上傳失敗','var(--amb)'); callback(false); });
         } else {
-          // 本機也沒資料 → 全新狀態直接連線
-          setSyncStatus('🔥 已連線（新房間）', 'var(--grn)');
+          setSyncStatus('🔥 已連線（新房間）','var(--grn)');
           callback(true);
         }
       }
     })
-    .catch(function(e) {
-      setSyncStatus('⚠️ 連線失敗，使用本機', 'var(--amb)');
-      callback(false);
-    });
+    .catch(function(e) { setSyncStatus('⚠️ 連線失敗，使用本機','var(--amb)'); callback(false); });
 }
 
 function fbListen() {
@@ -419,7 +386,7 @@ function fbListen() {
     var ts = data._ts; delete data._ts;
     D = data; D._ts = ts;
     try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-    setSyncStatus('🔥 已更新', 'var(--grn)');
+    setSyncStatus('🔥 已更新','var(--grn)');
     renderCatBar();
     if (curPage==='cal'){buildCal();buildDayPanel();}
     else if (curPage==='calorie') buildCaloriePage();
@@ -428,66 +395,10 @@ function fbListen() {
   }, function(e){ console.error('FB snapshot:', e); });
 }
 
-// ===== GOOGLE SHEETS (單向匯出) =====
-function gsPost(payload) {
-  if (!gsUrl) return;
-  fetch(gsUrl, {method:'POST', body:JSON.stringify(payload)})
-    .then(function(r){return r.json();})
-    .then(function(d){if(!d.ok) console.warn('GS:', d.message);})
-    .catch(function(e){console.warn('GS error:', e);});
-}
-
-function gsExport() {
-  if (!gsUrl) return;
-  clearTimeout(gsPending);
-  gsPending = setTimeout(function() {
-    var s = D.shared[selDate] || {};
-
-    // 共用分頁只寫一次（不跟著貓咪迴圈走）
-    gsPost({
-      action: 'syncShared',
-      date: selDate,
-      shared: {
-        pee: s.pee||0,
-        poop: s.poop||0,
-        vomitUnknown: s.vomitUnknown||0,
-        waterLogs: s.waterLogs||[]
-      }
-    });
-
-    // 每隻貓各自寫入自己的分頁
-    D.cats.forEach(function(cat) {
-      var r = D.records[cat.name+'|'+selDate] || {};
-      var meals = D.meals[cat.name+'|'+selDate] || [];
-      var mealDetails = meals.map(function(m) {
-        var f = foodById(m.foodId);
-        return {time:m.time, name:f?f.name:'?', portions:m.portions, kcal:f?f.kcal*m.portions:0};
-      });
-      gsPost({
-        action: 'syncCat',
-        date: selDate,
-        catName: cat.name,
-        rec: {
-          weight: r.weight||'',
-          kcal: Math.round(mealDetails.reduce(function(a,m){return a+m.kcal;},0)*10)/10,
-          dailyTarget: calcDaily(cat),
-          vomit: r.vomit||0,
-          care: r.care||{},
-          notes: r.notes||''
-        },
-        meals: mealDetails,
-        meds: (D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
-      });
-    });
-
-    gsPost({action:'syncFoods', foods:D.foods});
-  }, 2000);
-}
-
 function openFBModal() {
   var room = getRoomCode();
-  document.getElementById('room-code-input').value = room || '';
-  document.getElementById('gs-url').value = getGSUrl() || '';
+  document.getElementById('room-code-input').value = room||'';
+  document.getElementById('gs-url').value = getGSUrl()||'';
   document.getElementById('fb-disconnect').style.display = room ? '' : 'none';
   document.getElementById('room-hint').style.display = room ? 'none' : '';
   openModal('modal-fb');
@@ -812,14 +723,29 @@ function changeMonth(d) {
 }
 
 function buildCal() {
-  // 未加入房間，顯示引導畫面
+  // 沒有貓咪時，提示新增
+  if (!D.cats || D.cats.length === 0) {
+    document.getElementById('pg-cal').innerHTML =
+      '<div style="text-align:center;padding:48px 24px">' +
+      '<div style="font-size:52px;margin-bottom:16px">🐾</div>' +
+      '<div style="font-size:15px;color:var(--t2);line-height:1.8;margin-bottom:28px">請先新增一隻寵物<br>才能開始記錄資料</div>' +
+      '<button class="btn" style="padding:13px 32px;font-size:15px" id="btn-goto-add">➕ 新增寵物</button>' +
+      '</div>';
+    var btn = document.getElementById('btn-goto-add');
+    if (btn) btn.onclick = function() {
+      showPage('settings');
+      setTimeout(function() { openCatModal('add'); }, 100);
+    };
+    return;
+  }
+
+  // 未加入房間
   if (!currentRoom) {
     document.getElementById('pg-cal').innerHTML =
-      '<div style="text-align:center;padding:40px 20px">' +
-      '<div style="font-size:48px;margin-bottom:16px">🐱</div>' +
-      '<div style="font-size:18px;font-weight:700;color:var(--t1);margin-bottom:8px">歡迎使用貓咪健康日誌</div>' +
-      '<div style="font-size:14px;color:var(--t2);line-height:1.7;margin-bottom:24px">請先加入或建立一個房間<br>才能開始記錄資料</div>' +
-      '<button class="btn" style="padding:13px 32px;font-size:15px" id="btn-goto-settings">⚙️ 前往設定加入房間</button>' +
+      '<div style="text-align:center;padding:48px 24px">' +
+      '<div style="font-size:52px;margin-bottom:16px">🏠</div>' +
+      '<div style="font-size:15px;color:var(--t2);line-height:1.8;margin-bottom:28px">請加入或建立一個房間<br>才能開始同步資料</div>' +
+      '<button class="btn" style="padding:13px 32px;font-size:15px" id="btn-goto-settings">⚙️ 前往設定</button>' +
       '</div>';
     var gs = document.getElementById('btn-goto-settings');
     if (gs) gs.onclick = function() { showPage('settings'); };
@@ -1307,15 +1233,52 @@ function openCareModal(key) {
   curCareKey = key;
   var item = null;
   for (var i = 0; i < CARE_ITEMS.length; i++) if (CARE_ITEMS[i].key===key) { item=CARE_ITEMS[i]; break; }
-  document.getElementById('mcare-title').textContent = '記錄 ' + item.name;
-  document.getElementById('mcare-date').value = lastCareDate(key) || todayStr;
-  // 疫苗欄位只在疫苗時顯示
+  document.getElementById('mcare-title').textContent = item.name;
+
+  // 顯示所有歷史紀錄（可刪除）
+  var entries = Object.keys(D.records)
+    .filter(function(k) { return k.indexOf(catN()+'|')===0 && D.records[k].care && D.records[k].care[key]; })
+    .map(function(k) { return k.split('|')[1]; })
+    .sort().reverse();
+
+  var histEl = document.getElementById('mcare-history');
+  if (entries.length > 0) {
+    var histHtml = '<div style="font-size:12px;font-weight:600;color:var(--t3);margin-bottom:6px">已記錄</div>';
+    entries.forEach(function(dt) {
+      var vtype = (key==='vaccine') ? getLastVaccineTypeForDate(dt) : '';
+      histHtml += '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--bd)">';
+      histHtml += '<span style="flex:1;font-size:13px">' + dt + (vtype?' · '+vtype:'') + '</span>';
+      histHtml += '<button class="btn-del care-del-btn" data-dt="'+dt+'" style="width:24px;height:24px;font-size:12px">✕</button>';
+      histHtml += '</div>';
+    });
+    histEl.innerHTML = histHtml;
+    histEl.style.marginBottom = '12px';
+    // 綁定刪除按鈕
+    var delBtns = histEl.querySelectorAll('.care-del-btn');
+    for (var i = 0; i < delBtns.length; i++) {
+      delBtns[i].addEventListener('click', (function(dt) {
+        return function() {
+          var r = D.records[catN()+'|'+dt];
+          if (r && r.care) {
+            delete r.care[key];
+            if (key==='vaccine') delete r.care.vaccineType;
+          }
+          saveD(); renderCal_light();
+          openCareModal(key); // 重新開啟更新清單
+        };
+      })(delBtns[i].getAttribute('data-dt')));
+    }
+  } else {
+    histEl.innerHTML = '';
+    histEl.style.marginBottom = '0';
+  }
+
+  // 新增日期預設今天
+  document.getElementById('mcare-date').value = todayStr;
   var isVaccine = key === 'vaccine';
   document.getElementById('mcare-vaccine-row').style.display = isVaccine ? '' : 'none';
   if (isVaccine) {
-    // 找最近一筆疫苗種類
-    var lastType = getLastVaccineType();
-    document.getElementById('mcare-vaccine-type').value = lastType || '';
+    document.getElementById('mcare-vaccine-type').value = '';
   }
   openModal('modal-care');
 }
