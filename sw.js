@@ -1,4 +1,4 @@
-const CACHE = 'cat-health-v4';
+const CACHE = 'cat-health-v5';
 const FILES = [
   './index.html',
   './manifest.json',
@@ -19,15 +19,18 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // 只快取 GET 請求，POST 直接走網路（Firebase/Sheets API）
+  if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request).then(function(response) {
-      var clone = response.clone();
-      caches.open(CACHE).then(function(cache) {
-        cache.put(e.request, clone);
+    caches.match(e.request).then(function(cached) {
+      var network = fetch(e.request).then(function(response) {
+        if (response && response.status === 200 && response.type === 'basic') {
+          var clone = response.clone();
+          caches.open(CACHE).then(function(cache) { cache.put(e.request, clone); });
+        }
+        return response;
       });
-      return response;
-    }).catch(function() {
-      return caches.match(e.request);
+      return cached || network;
     })
   );
 });
