@@ -305,95 +305,6 @@ function setSyncStatus(msg, color) {
   if (el) { el.textContent = msg; el.style.color = color||'var(--t3)'; }
 }
 
-// ===== GOOGLE SHEETS 單向備份（APP → Google Sheets） =====
-function gsPost(payload, callback) {
-  if (!gsUrl) { if (callback) callback(null); return; }
-  setSyncStatus('📊 備份中...', 'var(--t3)');
-  fetch(gsUrl, {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data && data.ok) {
-      setSyncStatus('📊 已備份 Sheets', 'var(--grn)');
-    } else {
-      setSyncStatus('⚠️ ' + ((data && data.message) || '備份失敗'), 'var(--red)');
-    }
-    if (callback) callback(data);
-  })
-  .catch(function(e) {
-    console.error('Google Sheets sync error:', e);
-    setSyncStatus('⚠️ Sheets 網路錯誤', 'var(--red)');
-    if (callback) callback(null);
-  });
-}
-
-function bulkSyncToSheets(callback) {
-  if (!gsUrl) { if (callback) callback(false); return; }
-  gsPost({action:'bulkSync', data:D}, function(res) {
-    if (callback) callback(!!(res && res.ok));
-  });
-}
-
-function syncDayToSheets(date) {
-  if (!gsUrl || !D || !D.cats || !D.cats.length) return;
-  var cat = catObj();
-  if (!cat) return;
-  var r = getRec(date);
-  var shared = getShared(date);
-  var meals = getMeals(date);
-  var catMedsArr = getCatMeds();
-
-  var mealDetails = meals.map(function(m) {
-    var f = foodById(m.foodId);
-    return {
-      time: m.time,
-      name: f ? f.name : '?',
-      portions: m.portions,
-      kcal: f ? f.kcal * m.portions : 0
-    };
-  });
-  var totalKcal = mealDetails.reduce(function(sum, m) {
-    return sum + (Number(m.kcal) || 0);
-  }, 0);
-
-  gsPost({
-    action: 'syncDay',
-    date: date,
-    catName: catN(),
-    rec: {
-      weight: r.weight,
-      kcal: Math.round(totalKcal * 10) / 10,
-      dailyTarget: calcDaily(cat),
-      vomit: r.vomit || 0,
-      care: r.care || {},
-      notes: r.notes || ''
-    },
-    shared: shared,
-    meals: mealDetails,
-    meds: catMedsArr.map(function(mn) {
-      return {name: mn, given: !!(r.meds && r.meds[mn])};
-    })
-  });
-}
-
-function syncFoodsToSheets() {
-  if (!gsUrl || !D) return;
-  gsPost({action:'syncFoods', foods:D.foods || []}, null);
-}
-
-// 原本遺失的 gsExport：維持「APP → Google Sheets」單向備份。
-// 不會從 Google Sheets 讀回資料，也不會改動 Firebase。
-function gsExport() {
-  if (!gsUrl || !D) return;
-  clearTimeout(gsPending);
-  gsPending = setTimeout(function() {
-    syncDayToSheets(selDate || todayStr);
-    syncFoodsToSheets();
-  }, 200);
-}
-
 function genRoomCode() {
   var chars = 'abcdefghijkmnpqrstuvwxyz23456789';
   var a='',b='';
@@ -499,10 +410,94 @@ function loadD() {
   try { var r = localStorage.getItem(SK); if (r) return JSON.parse(r); } catch(e) {}
   return defaultData();
 }
-function saveD() {
+function saveD(exportDate) {
   try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-  if (db && currentRoom) { fbSave(); }
-  else if (gsUrl) { gsExport(); }
+  if (db) { fbSave(); }
+  else if (gsUrl) { gsExport(exportDate); }
+  if (db && gsUrl) { gsExport(exportDate); }
+}
+
+// ===== GOOGLE SHEETS 單向匯出 =====
+function gsPost(payload) {
+  if (!gsUrl) return;
+  fetch(gsUrl, {method:'POST', body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d){if(!d.ok) console.warn('GS:', d.message);})
+    .catch(function(e){console.warn('GS error:', e);});
+}
+
+function gsExport(exportDate) {
+  if (!gsUrl) return;
+  clearTimeout(gsPending);
+  gsPending = setTimeout(function() {
+    // 收集日期（去重）
+    var dateMap = {};
+    if (exportDate) dateMap[exportDate] = true;
+    if (selDate) dateMap[selDate] = true;
+    if (todayStr) dateMap[todayStr] = true;
+    var dateList = Object.keys(dateMap).sort();
+
+    // 依序同步，避免同時發送造成重複列
+    function syncNext(idx) {
+      if (idx >= dateList.length) {
+        gsPost({action:'syncFoods', foods:D.foods});
+        return;
+      }
+      var date = dateList[idx];
+      var s = D.shared[date] || {};
+
+      // 先同步共用分頁
+      fetch(gsUrl, {method:'POST', body:JSON.stringify({
+        action: 'syncShared',
+        date: date,
+        shared: {
+          pee: s.pee||0,
+          poop: s.poop||0,
+          vomitUnknown: s.vomitUnknown||0,
+          waterLogs: s.waterLogs||[]
+        }
+      })})
+      .then(function(r){return r.json();})
+      .then(function() {
+        // 共用同步完成後，依序同步所有貓
+        function syncCatNext(ci) {
+          if (ci >= D.cats.length) {
+            syncNext(idx + 1);
+            return;
+          }
+          var cat = D.cats[ci];
+          var r = D.records[cat.name+'|'+date] || {};
+          var meals = D.meals[cat.name+'|'+date] || [];
+          var mealDetails = meals.map(function(m) {
+            var f = foodById(m.foodId);
+            return {time:m.time, name:f?f.name:'?', portions:m.portions, kcal:f?f.kcal*m.portions:0};
+          });
+          fetch(gsUrl, {method:'POST', body:JSON.stringify({
+            action: 'syncCat',
+            date: date,
+            catName: cat.name,
+            rec: {
+              weight: r.weight||'',
+              kcal: Math.round(mealDetails.reduce(function(a,m2){return a+m2.kcal;},0)*10)/10,
+              dailyTarget: calcDaily(cat),
+              vomit: r.vomit||0,
+              care: r.care||{},
+              notes: r.notes||''
+            },
+            meals: mealDetails,
+            meds: (D.meds[cat.name]||[]).map(function(mn){return {name:mn,given:!!(r.meds&&r.meds[mn])};})
+          })})
+          .then(function(r2){return r2.json();})
+          .then(function() { syncCatNext(ci + 1); })
+          .catch(function() { syncCatNext(ci + 1); });
+        }
+        syncCatNext(0);
+      })
+      .catch(function() { syncNext(idx + 1); });
+    }
+
+    syncNext(0);
+  }, 2000);
 }
 
 function catObj() { return D.cats[curCat]; }
@@ -548,7 +543,7 @@ function getCatColor(idx) {
 function setCatColor(catName, color) {
   if (!D.catColors) D.catColors = {};
   D.catColors[catName] = color;
-  saveD();
+  saveD(selDate);
 }
 
 function catColorByName(name) {
@@ -673,12 +668,7 @@ function bindEvents() {
     closeModal('modal-fb');
     fbLoad(function() {
       renderCatBar(); showPage(curPage); fbListen();
-      fbSave(); // 上傳本機現有資料到 Firebase
-      if (gsUrl) {
-        bulkSyncToSheets(function(ok) {
-          if (!ok) console.warn('Google Sheets 初次備份失敗');
-        });
-      }
+      fbSave(); // 上傳本機現有資料
     });
   };
   document.getElementById('fb-disconnect').onclick = function() {
@@ -785,7 +775,7 @@ function confirmCat() {
   if (!v) return;
   if (catModalMode === 'add') { D.cats.push({name:v,weight:4,status:'1.2'}); curCat = D.cats.length - 1; }
   else catObj().name = v;
-  saveD(); closeModal('modal-cat'); renderCatBar(); showPage(curPage);
+  saveD(selDate); closeModal('modal-cat'); renderCatBar(); showPage(curPage);
 }
 
 // ===== PAGE SWITCH =====
@@ -1174,7 +1164,7 @@ function buildDayPanel() {
       return function() {
         var k = catN() + '|' + selDate;
         D.meals[k] = (D.meals[k]||[]).filter(function(m) { return m.id !== mid; });
-        saveD(); renderCal_light(); buildDayPanel();
+        saveD(selDate); renderCal_light(); buildDayPanel();
       };
     })(parseInt(dayMealDels[dmd].getAttribute('data-mid'))));
   }
@@ -1253,13 +1243,13 @@ function addWaterLog() {
   var drunk = Math.max(0, added - left);
   var s = getShared(selDate);
   s.waterLogs.push({added:added, left:left, drunk:drunk});
-  saveD(); renderCal_light(); buildWaterCard();
+  saveD(selDate); renderCal_light(); buildWaterCard();
 }
 
 function delWaterLog(i) {
   var s = getShared(selDate);
   s.waterLogs.splice(i, 1);
-  saveD(); renderCal_light(); buildWaterCard();
+  saveD(selDate); renderCal_light(); buildWaterCard();
 }
 
 // light re-render (just dots, no full rebuild)
@@ -1283,7 +1273,7 @@ function chShared(type, delta) {
   var ids = {pee:'pee-v', poop:'poo-v', vomitUnknown:'vomit-unknown-v'};
   var el = document.getElementById(ids[type]);
   if (el) el.textContent = s[type];
-  saveD(); renderCal_light();
+  saveD(selDate); renderCal_light();
 }
 
 function chVomit(delta) {
@@ -1291,14 +1281,14 @@ function chVomit(delta) {
   r.vomit = Math.max(0, (r.vomit||0) + delta);
   var el = document.getElementById('vom-v');
   if (el) el.textContent = r.vomit;
-  saveD(); renderCal_light();
+  saveD(selDate); renderCal_light();
 }
 
 function saveWeight() {
   var r = getRec(selDate);
   var v = parseFloat(document.getElementById('w-inp').value);
   r.weight = isNaN(v) ? '' : v;
-  saveD(); renderCal_light(); buildDayPanel();
+  saveD(selDate); renderCal_light(); buildDayPanel();
 }
 
 function toggleMed(i) {
@@ -1306,7 +1296,7 @@ function toggleMed(i) {
   if (!r.meds) r.meds = {};
   var m = getCatMeds()[i];
   r.meds[m] = !r.meds[m];
-  saveD(); buildDayPanel();
+  saveD(selDate); buildDayPanel();
 }
 
 function saveDay() {
@@ -1314,7 +1304,7 @@ function saveDay() {
   r.notes = document.getElementById('notes-inp').value;
   var v = parseFloat(document.getElementById('w-inp').value);
   r.weight = isNaN(v) ? '' : v;
-  saveD(); renderCal_light();
+  saveD(selDate); renderCal_light();
   var b = document.getElementById('save-day-btn');
   b.textContent = '✓ 已儲存！'; b.style.background = 'var(--grn)';
   setTimeout(function() { b.textContent = '儲存紀錄'; b.style.background = ''; }, 1600);
@@ -1355,7 +1345,7 @@ function openCareModal(key) {
             delete r.care[key];
             if (key==='vaccine') delete r.care.vaccineType;
           }
-          saveD(); renderCal_light();
+          saveD(selDate); renderCal_light();
           openCareModal(key); // 重新開啟更新清單
         };
       })(delBtns[i].getAttribute('data-dt')));
@@ -1402,7 +1392,8 @@ function confirmCare() {
     var vtype = document.getElementById('mcare-vaccine-type').value.trim();
     r.care.vaccineType = vtype || '';
   }
-  saveD(); closeModal('modal-care'); renderCal_light(); buildDayPanel();
+  saveD(dt); // 傳入護理日期，確保 Sheets 同步正確日期
+  closeModal('modal-care'); renderCal_light(); buildDayPanel();
 }
 
 // ===== CALORIE PAGE =====
@@ -1521,7 +1512,7 @@ function buildCaloriePage() {
       return function(){
         var k=catN()+'|'+selDate;
         D.meals[k]=(D.meals[k]||[]).filter(function(m){return m.id!==mid;});
-        saveD();renderCal_light();buildCaloriePage();
+        saveD(todayStr);renderCal_light();buildCaloriePage();
       };
     })(parseInt(cal2dels[cd].getAttribute('data-mid')));
   }
@@ -1536,7 +1527,7 @@ function buildCaloriePage() {
         if(!D.meals[k])D.meals[k]=[];
         D.meals[k].push({id:D.nextId++,foodId:pr.foodId,portions:pr.portions,time:pr.time});
         D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
-        saveD();renderCal_light();buildCaloriePage();
+        saveD(todayStr);renderCal_light();buildCaloriePage();
       };
     })(parseInt(cal2adds[pa].getAttribute('data-pi')));
   }
@@ -1552,7 +1543,7 @@ function buildCaloriePage() {
           D.meals[k].push({id:D.nextId++,foodId:pr.foodId,portions:pr.portions,time:pr.time});
           D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
         });
-        saveD();renderCal_light();buildCaloriePage();
+        saveD(todayStr);renderCal_light();buildCaloriePage();
       };
     })(parseInt(cal2addsAll[pab].getAttribute('data-pi')));
   }
@@ -1563,7 +1554,7 @@ function buildCaloriePage() {
     pdels[pd].onclick=(function(pi3){
       return function(){
         if(!confirm('刪除此常用餐點？'))return;
-        getCatPresets().splice(pi3,1);saveD();buildCaloriePage();
+        getCatPresets().splice(pi3,1);saveD(todayStr);buildCaloriePage();
       };
     })(parseInt(pdels[pd].getAttribute('data-pi')));
   }
@@ -1582,11 +1573,12 @@ function buildCaloriePage() {
     var fid=parseInt(document.getElementById('m-food').value);
     var portions=parseFloat(document.getElementById('m-portions').value)||1;
     var time=document.getElementById('m-time').value||nowTime();
-    var k=catN()+'|'+selDate;
+    var k=catN()+'|'+todayStr;
     if(!D.meals[k])D.meals[k]=[];
     D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
     D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
-    saveD();renderCal_light();buildCaloriePage();
+    saveD(todayStr);renderCal_light();buildCaloriePage();
+    gsExport(todayStr);
   };
   // 同步新增：新增到所有貓
   document.getElementById('btn-add-meal-both').onclick=function(){
@@ -1594,12 +1586,13 @@ function buildCaloriePage() {
     var portions=parseFloat(document.getElementById('m-portions').value)||1;
     var time=document.getElementById('m-time').value||nowTime();
     D.cats.forEach(function(cat){
-      var k=cat.name+'|'+selDate;
+      var k=cat.name+'|'+todayStr;
       if(!D.meals[k])D.meals[k]=[];
       D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
       D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
     });
-    saveD();renderCal_light();buildCaloriePage();
+    saveD(todayStr);renderCal_light();buildCaloriePage();
+    gsExport(todayStr);
   };
   document.getElementById('btn-save-preset').onclick=function(){
     var fid=parseInt(document.getElementById('m-food').value);
@@ -1611,7 +1604,7 @@ function buildCaloriePage() {
     if(dup){alert('此時間點的食物已在常用餐點中');return;}
     presets2.push({foodId:fid,portions:portions,time:time});
     presets2.sort(function(a,b){return a.time>b.time?1:-1;});
-    saveD();
+    saveD(todayStr);
     var btn=document.getElementById('btn-save-preset');
     btn.textContent='✓ 已儲存';btn.style.background='var(--grn)';
     setTimeout(function(){btn.textContent='存為常用';btn.style.background='';},1500);
@@ -1655,14 +1648,14 @@ function buildFoodsPage() {
     var kcal = parseFloat(document.getElementById('f-kcal').value) || 0;
     if (!name||!grams||!kcal) { alert('請填寫名稱、每份克數和每份熱量'); return; }
     D.foods.push({id:D.nextId++, name:name, grams:grams, kcal:kcal});
-    saveD(); buildFoodsPage();
+    saveD(selDate); buildFoodsPage();
   };
   var delBtns = document.querySelectorAll('.food-del');
   for (var di = 0; di < delBtns.length; di++) {
     delBtns[di].addEventListener('click', (function(fid) {
       return function() {
         D.foods = D.foods.filter(function(f) { return f.id !== fid; });
-        saveD(); buildFoodsPage();
+        saveD(selDate); buildFoodsPage();
       };
     })(parseInt(delBtns[di].getAttribute('data-fid'))));
   }
@@ -1773,7 +1766,7 @@ function buildSettingsPage() {
     var v = parseFloat(document.getElementById('s-water-default').value);
     if (!isNaN(v) && v >= 0) {
       D.waterDefault = v;
-      saveD();
+      saveD(selDate);
       var btn = document.getElementById('btn-save-water-default');
       btn.textContent = '✓ 已儲存'; btn.style.background = 'var(--grn)';
       setTimeout(function(){ btn.textContent = '儲存'; btn.style.background = ''; }, 1500);
@@ -1786,13 +1779,13 @@ function buildSettingsPage() {
     c.birthday = document.getElementById('s-birthday').value || '';
     c.weight = parseFloat(document.getElementById('s-weight').value) || c.weight;
     c.status = document.getElementById('s-status').value;
-    saveD(); renderCatBar(); buildSettingsPage();
+    saveD(selDate); renderCatBar(); buildSettingsPage();
   };
   document.getElementById('btn-add-med').onclick = function() {
     var v = document.getElementById('med-inp').value.trim();
     if (!v) return;
     var m = getCatMeds();
-    if (m.indexOf(v) === -1) { m.push(v); saveD(); }
+    if (m.indexOf(v) === -1) { m.push(v); saveD(selDate); }
     document.getElementById('med-inp').value = '';
     buildSettingsPage();
   };
@@ -1802,7 +1795,7 @@ function buildSettingsPage() {
   var delBtns = document.querySelectorAll('.med-del');
   for (var di = 0; di < delBtns.length; di++) {
     delBtns[di].addEventListener('click', (function(mi) {
-      return function() { getCatMeds().splice(mi,1); saveD(); buildSettingsPage(); };
+      return function() { getCatMeds().splice(mi,1); saveD(selDate); buildSettingsPage(); };
     })(parseInt(delBtns[di].getAttribute('data-mi'))));
   }
 
@@ -1812,7 +1805,7 @@ function buildSettingsPage() {
     D.shared = {};
     D.meals = {};
     D.nextId = 10;
-    saveD();
+    saveD(selDate);
     alert('已清除所有紀錄！');
     showPage('cal');
   };
