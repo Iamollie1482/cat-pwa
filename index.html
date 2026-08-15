@@ -412,9 +412,8 @@ function loadD() {
 }
 function saveD(exportDate) {
   try { localStorage.setItem(SK, JSON.stringify(D)); } catch(e) {}
-  if (db) { fbSave(); }
-  else if (gsUrl) { gsExport(exportDate); }
-  if (db && gsUrl) { gsExport(exportDate); }
+  if (db) fbSave();
+  if (gsUrl) gsExport(exportDate);
 }
 
 // ===== GOOGLE SHEETS 單向匯出 =====
@@ -1573,12 +1572,11 @@ function buildCaloriePage() {
     var fid=parseInt(document.getElementById('m-food').value);
     var portions=parseFloat(document.getElementById('m-portions').value)||1;
     var time=document.getElementById('m-time').value||nowTime();
-    var k=catN()+'|'+todayStr;
+    var k=catN()+'|'+selDate;
     if(!D.meals[k])D.meals[k]=[];
     D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
     D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
-    saveD(todayStr);renderCal_light();buildCaloriePage();
-    gsExport(todayStr);
+    saveD(selDate);renderCal_light();buildCaloriePage();
   };
   // 同步新增：新增到所有貓
   document.getElementById('btn-add-meal-both').onclick=function(){
@@ -1586,13 +1584,12 @@ function buildCaloriePage() {
     var portions=parseFloat(document.getElementById('m-portions').value)||1;
     var time=document.getElementById('m-time').value||nowTime();
     D.cats.forEach(function(cat){
-      var k=cat.name+'|'+todayStr;
+      var k=cat.name+'|'+selDate;
       if(!D.meals[k])D.meals[k]=[];
       D.meals[k].push({id:D.nextId++,foodId:fid,portions:portions,time:time});
       D.meals[k].sort(function(a,b){return a.time>b.time?1:-1;});
     });
-    saveD(todayStr);renderCal_light();buildCaloriePage();
-    gsExport(todayStr);
+    saveD(selDate);renderCal_light();buildCaloriePage();
   };
   document.getElementById('btn-save-preset').onclick=function(){
     var fid=parseInt(document.getElementById('m-food').value);
