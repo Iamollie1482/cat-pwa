@@ -1819,17 +1819,24 @@ function buildSettingsPage() {
 function buildReportPage() {
   if (!currentRoom) { showPage('cal'); return; }
   var pg = document.getElementById('pg-report');
-  var DAYS = 30;
+  var now = new Date();
+  var DAYS = 60; // 收集60天資料（本月+上月）
   var dates = [];
   for (var i = DAYS-1; i >= 0; i--) {
     var d = new Date(); d.setDate(d.getDate() - i);
     dates.push(fmtDate(d));
   }
+  var dates30 = dates.slice(30); // 近30天
 
-  function catReport(cname) {
-    var weights = [], waters = [], kcals = [], vomits = [];
-    for (var i = 0; i < dates.length; i++) {
-      var dt = dates[i];
+  // 本月第一天、上月第一天
+  var thisMonthStr = now.getFullYear() + '-' + pad(now.getMonth()+1);
+  var lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  var lastMonthStr = lastMonthDate.getFullYear() + '-' + pad(lastMonthDate.getMonth()+1);
+
+  function catReport30(cname) {
+    var waters = [], kcals = [];
+    for (var i = 0; i < dates30.length; i++) {
+      var dt = dates30[i];
       var rk = cname + '|' + dt;
       var r = D.records[rk];
       var s = D.shared[dt];
@@ -1841,178 +1848,170 @@ function buildReportPage() {
       }
       var wTotal = 0;
       if (s && s.waterLogs) for (var wi = 0; wi < s.waterLogs.length; wi++) wTotal += s.waterLogs[wi].drunk||0;
-      weights.push(r && r.weight ? parseFloat(r.weight) : null);
       waters.push(wTotal > 0 ? wTotal : null);
       kcals.push(ate > 0 ? Math.round(ate*10)/10 : null);
-      vomits.push(r && r.vomit > 0 ? r.vomit : 0);
     }
-    return {weights:weights, waters:waters, kcals:kcals, vomits:vomits};
+    return {waters:waters, kcals:kcals};
   }
 
-  // 多條折線圖（體重、嘔吐共用）
-  function multiLineChart(series, unit) {
-    var allVals = [];
-    series.forEach(function(s) {
-      s.vals.forEach(function(v) { if (v !== null && v > 0) allVals.push(v); });
-    });
-    if (allVals.length === 0) return '<div class="empty" style="padding:8px 0;font-size:12px">無資料</div>';
-
-    var max = Math.max.apply(null, allVals);
-    var min = unit === 'kg' ? Math.min.apply(null, allVals) : 0;
-    var range = max - min || 0.5;
-    var W = 280, H = 100, padT = 10, padB = 18, padL = 30, padR = 8;
-    var chartW = W - padL - padR, chartH = H - padT - padB;
-    var nDates = dates.length;
-
-    var svg = '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="display:block">';
-    // 格線
-    svg += '<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
-    svg += '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
-    svg += '<line x1="'+padL+'" y1="'+(padT+chartH/2)+'" x2="'+(W-padR)+'" y2="'+(padT+chartH/2)+'" stroke="rgba(0,0,0,0.04)" stroke-width="1" stroke-dasharray="3,2"/>';
-    // Y軸標籤
-    svg += '<text x="'+(padL-4)+'" y="'+(padT+4)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+max.toFixed(unit==='kg'?1:0)+'</text>';
-    svg += '<text x="'+(padL-4)+'" y="'+(H-padB)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+min.toFixed(unit==='kg'?1:0)+'</text>';
-    // X軸日期（首、中、末）
-    [0, Math.floor(nDates/2), nDates-1].forEach(function(idx) {
-      var xp = padL + Math.round(idx * chartW / (nDates-1));
-      svg += '<text x="'+xp+'" y="'+(H-padB+10)+'" font-size="8" fill="rgba(0,0,0,0.35)" text-anchor="middle">'+(dates[idx]?dates[idx].slice(5):'')+'</text>';
-    });
-    // 每條線
-    series.forEach(function(s) {
-      var points = [];
-      for (var i = 0; i < s.vals.length; i++) {
-        var v = s.vals[i];
-        if (v === null || (unit !== 'kg' && v === 0)) continue;
-        var xp = padL + Math.round(i * chartW / (nDates-1));
-        var yp = padT + Math.round((1-(v-min)/range) * chartH);
-        points.push({x:xp, y:yp, v:v});
-      }
-      if (points.length === 0) return;
-      if (points.length === 1) {
-        svg += '<circle cx="'+points[0].x+'" cy="'+points[0].y+'" r="3" fill="'+s.color+'"/>';
-        return;
-      }
-      svg += '<polyline points="'+points.map(function(p){return p.x+','+p.y;}).join(' ')+'" fill="none" stroke="'+s.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-      points.forEach(function(p) {
-        svg += '<circle cx="'+p.x+'" cy="'+p.y+'" r="2.5" fill="'+s.color+'"/>';
-      });
-    });
-    svg += '</svg>';
-
-    // 統計列
-    var statsHtml = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">';
-    series.forEach(function(s) {
-      var nonNull = s.vals.filter(function(v){ return v !== null && v > 0; });
-      if (nonNull.length === 0) return;
-      var latest = nonNull[nonNull.length-1];
-      var avg = nonNull.reduce(function(a,b){return a+b;},0)/nonNull.length;
-      statsHtml += '<span style="font-size:11px;color:var(--t2);display:flex;align-items:center;gap:4px">';
-      statsHtml += '<span style="display:inline-block;width:14px;height:2.5px;background:'+s.color+';border-radius:2px"></span>';
-      statsHtml += s.name+': 最新 '+latest.toFixed(unit==='kg'?2:0)+unit;
-      if (unit==='kg') statsHtml += ' / 平均 '+avg.toFixed(2)+unit;
-      statsHtml += '</span>';
-    });
-    statsHtml += '</div>';
-    return svg + statsHtml;
-  }
-
-  // 長條圖（飲水）
+  // 長條圖
   function sparkline(vals, color, unit) {
     var nonNull = vals.filter(function(v){return v!==null && v>0;});
     if (nonNull.length === 0) return '<div class="empty" style="padding:8px 0;font-size:12px">無資料</div>';
     var max = Math.max.apply(null, nonNull);
-    var W = 280, H = 55, pad = 4;
+    var W = 280, H = 55, pad4 = 4;
     var bw = Math.max(2, Math.floor(W / vals.length) - 1);
     var svg = '<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">';
-    svg += '<line x1="0" y1="'+(H-pad)+'" x2="'+W+'" y2="'+(H-pad)+'" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>';
+    svg += '<line x1="0" y1="'+(H-pad4)+'" x2="'+W+'" y2="'+(H-pad4)+'" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>';
     for (var i = 0; i < vals.length; i++) {
       if (!vals[i] || vals[i] <= 0) continue;
-      var bh = Math.max(3, Math.round((vals[i]/max) * (H-pad*2)));
+      var bh = Math.max(3, Math.round((vals[i]/max) * (H-pad4*2)));
       var x = Math.round(i * W / vals.length);
-      svg += '<rect x="'+x+'" y="'+(H-pad-bh)+'" width="'+bw+'" height="'+bh+'" rx="2" fill="'+color+'" opacity="0.8"/>';
+      svg += '<rect x="'+x+'" y="'+(H-pad4-bh)+'" width="'+bw+'" height="'+bh+'" rx="2" fill="'+color+'" opacity="0.8"/>';
     }
     svg += '</svg>';
     var avg = nonNull.reduce(function(a,b){return a+b;},0)/nonNull.length;
     return svg+'<div style="display:flex;justify-content:space-between;margin-top:4px"><span class="sub">平均 '+avg.toFixed(0)+' '+unit+'</span><span class="sub">最新 '+nonNull[nonNull.length-1]+' '+unit+'</span></div>';
   }
 
-  // 收集資料
+  // 多條折線圖
+  function multiLineChart(series, unit) {
+    var allVals = [];
+    series.forEach(function(s) { s.vals.forEach(function(v) { if (v!==null && v>0) allVals.push(v); }); });
+    if (allVals.length === 0) return '<div class="empty" style="padding:8px 0;font-size:12px">無資料</div>';
+    var max = Math.max.apply(null, allVals);
+    var min = unit==='kg' ? Math.min.apply(null, allVals) : 0;
+    var range = max-min || 0.5;
+    var W=280,H=90,padT=10,padB=18,padL=30,padR=8;
+    var chartW=W-padL-padR, chartH=H-padT-padB;
+    var nDates=dates30.length;
+    var svg='<svg width="100%" viewBox="0 0 '+W+' '+H+'" style="display:block">';
+    svg+='<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
+    svg+='<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>';
+    svg+='<text x="'+(padL-4)+'" y="'+(padT+4)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+max.toFixed(unit==='kg'?1:0)+'</text>';
+    svg+='<text x="'+(padL-4)+'" y="'+(H-padB)+'" font-size="8" fill="rgba(0,0,0,0.4)" text-anchor="end">'+min.toFixed(unit==='kg'?1:0)+'</text>';
+    [0,Math.floor(nDates/2),nDates-1].forEach(function(idx){
+      var xp=padL+Math.round(idx*chartW/(nDates-1));
+      svg+='<text x="'+xp+'" y="'+(H-padB+10)+'" font-size="8" fill="rgba(0,0,0,0.35)" text-anchor="middle">'+(dates30[idx]?dates30[idx].slice(5):'')+'</text>';
+    });
+    series.forEach(function(s){
+      var points=[];
+      for(var i=0;i<s.vals.length;i++){
+        var v=s.vals[i];
+        if(v===null||(unit!=='kg'&&v===0)) continue;
+        var xp=padL+Math.round(i*chartW/(nDates-1));
+        var yp=padT+Math.round((1-(v-min)/range)*chartH);
+        points.push({x:xp,y:yp,v:v});
+      }
+      if(points.length===0) return;
+      if(points.length===1){svg+='<circle cx="'+points[0].x+'" cy="'+points[0].y+'" r="3" fill="'+s.color+'"/>'; return;}
+      svg+='<polyline points="'+points.map(function(p){return p.x+','+p.y;}).join(' ')+'" fill="none" stroke="'+s.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      points.forEach(function(p){svg+='<circle cx="'+p.x+'" cy="'+p.y+'" r="2.5" fill="'+s.color+'"/>'; });
+    });
+    svg+='</svg>';
+    var statsHtml='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">';
+    series.forEach(function(s){
+      var nonNull=s.vals.filter(function(v){return v!==null&&v>0;});
+      if(nonNull.length===0) return;
+      var latest=nonNull[nonNull.length-1];
+      statsHtml+='<span style="font-size:11px;color:var(--t2);display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:14px;height:2.5px;background:'+s.color+';border-radius:2px"></span>'+s.name+': 最新 '+latest.toFixed(unit==='kg'?2:0)+unit+'</span>';
+    });
+    return svg+statsHtml+'</div>';
+  }
+
   var allReps = D.cats.map(function(cat) {
-    return {cat:cat, rep:catReport(cat.name), color:catColorByName(cat.name)};
+    return {cat:cat, rep:catReport30(cat.name), color:catColorByName(cat.name)};
   });
-  var sharedVomits = dates.map(function(dt) {
-    var s = D.shared[dt]; return (s && s.vomitUnknown > 0) ? s.vomitUnknown : 0;
-  });
-  var sharedWaters = dates.map(function(dt) {
-    var s = D.shared[dt];
-    if (!s || !s.waterLogs) return null;
-    var t = s.waterLogs.reduce(function(a,l){return a+(l.drunk||0);},0);
-    return t > 0 ? t : null;
+  var sharedWaters = dates30.map(function(dt) {
+    var s=D.shared[dt]; if(!s||!s.waterLogs) return null;
+    var t=s.waterLogs.reduce(function(a,l){return a+(l.drunk||0);},0);
+    return t>0?t:null;
   });
 
   // 圖例
-  var legendHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:8px 0">';
-  allReps.forEach(function(cr) {
-    legendHtml += '<div style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;background:'+cr.color+';border-radius:2px;display:inline-block"></span><span style="font-size:12px;color:var(--t2);font-weight:500">'+cr.cat.name+'</span></div>';
-  });
-  legendHtml += '<div style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;background:var(--red);border-radius:2px;display:inline-block"></span><span style="font-size:12px;color:var(--t2);font-weight:500">不明嘔吐</span></div>';
-  legendHtml += '</div>';
-
   var html = '<div class="sec" style="margin-top:4px">近30天報表</div>';
-  html += legendHtml;
-
-  // 體重折線圖
-  html += '<div class="card2" style="margin-bottom:10px">';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">⚖️ 體重趨勢（kg）</div>';
-  html += multiLineChart(allReps.map(function(cr){ return {vals:cr.rep.weights, color:cr.color, name:cr.cat.name}; }), 'kg');
-  html += '</div>';
-
-  // 嘔吐折線圖（各貓 + 共用不明）
-  var vomitSeries = allReps.map(function(cr){ return {vals:cr.rep.vomits, color:cr.color, name:cr.cat.name}; });
-  vomitSeries.push({vals:sharedVomits, color:'var(--red)', name:'不明'});
-  var hasAnyVomit = vomitSeries.some(function(s){ return s.vals.some(function(v){return v>0;}); });
-  html += '<div class="card2" style="margin-bottom:10px">';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🤢 嘔吐紀錄（次）</div>';
-  html += hasAnyVomit ? multiLineChart(vomitSeries, '次') : '<div class="empty" style="padding:8px 0;font-size:12px">近30天無嘔吐紀錄 ✓</div>';
-  html += '</div>';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:4px 0">';
+  allReps.forEach(function(cr){
+    html+='<div style="display:flex;align-items:center;gap:5px"><span style="width:20px;height:3px;background:'+cr.color+';border-radius:2px;display:inline-block"></span><span style="font-size:12px;color:var(--t2);font-weight:500">'+cr.cat.name+'</span></div>';
+  });
+  html+='</div>';
 
   // 飲水長條圖
-  html += '<div class="card2" style="margin-bottom:10px">';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">💧 每日飲水（ml）<span class="sec-note">全貓共用</span></div>';
-  html += sparkline(sharedWaters, 'var(--tel)', 'ml');
-  html += '</div>';
+  html+='<div class="card2" style="margin-bottom:10px"><div style="font-size:13px;font-weight:600;margin-bottom:8px">💧 每日飲水（ml）<span class="sec-note">全貓共用</span></div>';
+  html+=sparkline(sharedWaters,'var(--tel)','ml');
+  html+='</div>';
 
   // 熱量折線圖
-  html += '<div class="card2" style="margin-bottom:10px">';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px">🍽️ 每日熱量（kcal）</div>';
-  html += multiLineChart(allReps.map(function(cr){ return {vals:cr.rep.kcals, color:cr.color, name:cr.cat.name}; }), 'kcal');
-  html += '</div>';
+  html+='<div class="card2" style="margin-bottom:10px"><div style="font-size:13px;font-weight:600;margin-bottom:8px">🍽️ 每日熱量（kcal）</div>';
+  html+=multiLineChart(allReps.map(function(cr){return {vals:cr.rep.kcals,color:cr.color,name:cr.cat.name};}), 'kcal');
+  html+='</div>';
 
-  // 體重明細（所有貓）
-  var hasWEntries = false;
-  var wTableHtml = '<div class="card">';
+  // ===== 嘔吐明細（本月 + 上月）=====
+  html += '<div class="sec">🤢 嘔吐明細</div>';
+  html += '<div class="card">';
+  var hasVomit = false;
+
+  // 各貓嘔吐
   allReps.forEach(function(cr) {
-    var entries = Object.keys(D.records)
-      .filter(function(k){ return k.indexOf(cr.cat.name+'|')===0 && D.records[k].weight; })
-      .map(function(k){ return {dt:k.split('|')[1], w:parseFloat(D.records[k].weight)}; })
-      .sort(function(a,b){ return b.dt>a.dt?1:-1; })
-      .slice(0,6);
+    var entries = [];
+    Object.keys(D.records).forEach(function(k) {
+      if (k.indexOf(cr.cat.name+'|')!==0) return;
+      var dt = k.split('|')[1];
+      if (dt.indexOf(thisMonthStr)!==0 && dt.indexOf(lastMonthStr)!==0) return;
+      var r = D.records[k];
+      if (r.vomit > 0) entries.push({dt:dt, count:r.vomit});
+    });
+    entries.sort(function(a,b){return b.dt>a.dt?1:-1;});
     if (entries.length === 0) return;
-    hasWEntries = true;
-    wTableHtml += '<div style="font-size:12px;font-weight:600;color:'+cr.color+';padding:6px 0 4px;border-bottom:1px solid var(--bd)">'+cr.cat.name+'</div>';
-    entries.forEach(function(e, ei) {
-      var diff = ei < entries.length-1 ? (e.w - entries[ei+1].w) : null;
-      var ds = diff !== null ? ' <span style="color:'+(diff>0?'var(--red)':'var(--grn)')+';font-size:11px">('+(diff>0?'+':'')+diff.toFixed(2)+')</span>' : '';
-      wTableHtml += '<div class="wh-row"><span style="color:var(--t3)">'+e.dt+'</span><span style="font-weight:600">'+e.w+' kg'+ds+'</span></div>';
+    hasVomit = true;
+    html += '<div style="font-size:12px;font-weight:600;color:'+cr.color+';padding:6px 0 4px;border-bottom:1px solid var(--bd)">'+cr.cat.name+'</div>';
+    entries.forEach(function(e) {
+      html += '<div class="wh-row"><span style="color:var(--t3)">'+e.dt+'</span><span style="font-weight:500;color:var(--red)">'+e.count+' 次</span></div>';
     });
   });
-  wTableHtml += '</div>';
-  if (hasWEntries) {
-    html += '<div class="sec">體重紀錄明細</div>' + wTableHtml;
+
+  // 共用不明嘔吐
+  var sharedVomitEntries = [];
+  Object.keys(D.shared).forEach(function(dt) {
+    if (dt.indexOf(thisMonthStr)!==0 && dt.indexOf(lastMonthStr)!==0) return;
+    var s = D.shared[dt];
+    if (s && s.vomitUnknown > 0) sharedVomitEntries.push({dt:dt, count:s.vomitUnknown});
+  });
+  sharedVomitEntries.sort(function(a,b){return b.dt>a.dt?1:-1;});
+  if (sharedVomitEntries.length > 0) {
+    hasVomit = true;
+    html += '<div style="font-size:12px;font-weight:600;color:var(--red);padding:6px 0 4px;border-bottom:1px solid var(--bd)">不明（共用）</div>';
+    sharedVomitEntries.forEach(function(e) {
+      html += '<div class="wh-row"><span style="color:var(--t3)">'+e.dt+'</span><span style="font-weight:500;color:var(--red)">'+e.count+' 次</span></div>';
+    });
   }
 
-  // 疫苗記錄明細
-  html += buildVaccineSection(allReps);
+  if (!hasVomit) html += '<div class="empty" style="padding:12px 0">本月及上月無嘔吐紀錄 ✓</div>';
+  html += '</div>';
+
+  // ===== 體重明細（最近3筆）=====
+  var hasWEntries = false;
+  var wHtml = '<div class="card">';
+  allReps.forEach(function(cr) {
+    var entries = Object.keys(D.records)
+      .filter(function(k){return k.indexOf(cr.cat.name+'|')===0 && D.records[k].weight;})
+      .map(function(k){return {dt:k.split('|')[1], w:parseFloat(D.records[k].weight)};})
+      .sort(function(a,b){return b.dt>a.dt?1:-1;})
+      .slice(0,3);
+    if (entries.length===0) return;
+    hasWEntries = true;
+    wHtml+='<div style="font-size:12px;font-weight:600;color:'+cr.color+';padding:6px 0 4px;border-bottom:1px solid var(--bd)">'+cr.cat.name+'</div>';
+    entries.forEach(function(e,ei){
+      var diff = ei<entries.length-1 ? (e.w-entries[ei+1].w) : null;
+      var ds = diff!==null ? ' <span style="color:'+(diff>0?'var(--red)':'var(--grn)')+';font-size:11px">('+(diff>0?'+':'')+diff.toFixed(2)+')</span>' : '';
+      wHtml+='<div class="wh-row"><span style="color:var(--t3)">'+e.dt+'</span><span style="font-weight:600">'+e.w+' kg'+ds+'</span></div>';
+    });
+  });
+  wHtml += '</div>';
+  if (hasWEntries) html += '<div class="sec">體重明細<span class="sec-note">最近3筆</span></div>' + wHtml;
+
+  // ===== 疫苗明細（最近3筆）=====
+  html += buildVaccineSection(allReps, 3);
 
   html += '<div style="height:20px"></div>';
   pg.innerHTML = html;
