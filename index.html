@@ -429,11 +429,23 @@ function gsExport(exportDate) {
   if (!gsUrl) return;
   clearTimeout(gsPending);
   gsPending = setTimeout(function() {
-    // 收集日期（去重）
+    // 收集日期（去重）：exportDate + selDate + todayStr + 所有有護理紀錄的日期
     var dateMap = {};
     if (exportDate) dateMap[exportDate] = true;
     if (selDate) dateMap[selDate] = true;
     if (todayStr) dateMap[todayStr] = true;
+
+    // 找出所有貓咪有護理紀錄的日期，一併同步
+    D.cats.forEach(function(cat) {
+      Object.keys(D.records).forEach(function(k) {
+        if (k.indexOf(cat.name + '|') !== 0) return;
+        var r = D.records[k];
+        if (!r.care) return;
+        var hasCare = Object.keys(r.care).some(function(ck) { return r.care[ck] === true; });
+        if (hasCare) dateMap[k.split('|')[1]] = true;
+      });
+    });
+
     var dateList = Object.keys(dateMap).sort();
 
     // 依序同步，避免同時發送造成重複列
